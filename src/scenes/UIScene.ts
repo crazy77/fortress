@@ -253,9 +253,9 @@ export class UIScene extends Phaser.Scene {
 	}
 
 	private createWeaponButtons(): void {
-		const btnSize = 56;
-		const gap = 8;
-		const count = 6;
+		const btnSize = 50;
+		const gap = 5;
+		const count = 8;
 		const totalWidth = count * btnSize + (count - 1) * gap;
 		const startX = (CONFIG.VIEW_WIDTH - totalWidth) / 2;
 		const btnY = CONFIG.PLAY_HEIGHT + CONFIG.UI_BAR_HEIGHT / 2;
@@ -429,8 +429,8 @@ export class UIScene extends Phaser.Scene {
 	}
 
 	private updateWeaponButtons(data: UIData): void {
-		const btnSize = 56;
-		for (let i = 0; i < 6; i++) {
+		const btnSize = 50;
+		for (let i = 0; i < 8; i++) {
 			if (i >= data.weapons.length) {
 				this.weaponBtns[i].setVisible(false);
 				continue;

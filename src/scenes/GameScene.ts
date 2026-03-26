@@ -23,6 +23,7 @@ import { TurnManager, TurnState } from "../systems/TurnManager";
 import { WeaponSystem } from "../systems/WeaponSystem";
 import { WeatherSystem, getWeatherForMap } from "../systems/WeatherSystem";
 import { WindSystem } from "../systems/WindSystem";
+import { KeyboardAimSystem } from "../systems/KeyboardAimSystem";
 
 export class GameScene extends Phaser.Scene {
 	private terrain!: Terrain;
@@ -99,6 +100,7 @@ export class GameScene extends Phaser.Scene {
 	private usedItemsCount = 0;
 	private selfDamageDealt = false;
 	private resolvedMapId = "";
+	private keyboardAim: KeyboardAimSystem | null = null;
 
 	constructor() {
 		super("GameScene");
@@ -203,6 +205,11 @@ export class GameScene extends Phaser.Scene {
 		this.inputHandler.mapGravity = this.mapGravity;
 		this.inputHandler.mapWindMul = this.mapWindMul;
 		this.inputHandler.onFire = (aim) => this.fire(aim.angle, aim.power);
+
+		// 키보드 조준 시스템
+		this.keyboardAim = new KeyboardAimSystem(this);
+		this.keyboardAim.setActiveTank(this.tanks[first]);
+		this.keyboardAim.onFire = (aim) => this.fire(aim.angle, aim.power);
 
 		// 폭발 파티클 — 향상된 이펙트
 		this.explosionEmitter = this.add.particles(0, 0, "__DEFAULT", {
@@ -596,6 +603,7 @@ export class GameScene extends Phaser.Scene {
 				if (this.isCurrentPlayerAI()) {
 					this.inputHandler.setEnabled(false);
 					this.setMoveButtonsVisible(false);
+					if (this.keyboardAim) this.keyboardAim.setEnabled(false);
 
 					if (!this.aiThinking) {
 						this.aiThinking = true;
@@ -606,6 +614,7 @@ export class GameScene extends Phaser.Scene {
 				} else {
 					this.inputHandler.setEnabled(true);
 					this.setMoveButtonsVisible(true);
+					if (this.keyboardAim) this.keyboardAim.setEnabled(true);
 					const cp = this.turnManager.currentPlayer;
 				if (this.movingDirection !== 0 && this.debuffs[cp].moveLock <= 0) {
 						const tank = this.tanks[cp];
@@ -653,6 +662,7 @@ export class GameScene extends Phaser.Scene {
 			case TurnState.FLIGHT:
 				this.inputHandler.setEnabled(false);
 				this.setMoveButtonsVisible(false);
+				if (this.keyboardAim) this.keyboardAim.setEnabled(false);
 				this.updateProjectiles();
 				break;
 
@@ -725,6 +735,33 @@ export class GameScene extends Phaser.Scene {
 				this.windSystem.currentWind *= -1;
 				this.inputHandler.currentWind = this.windSystem.currentWind;
 				break;
+			case "teleport": {
+				// 랜덤 안전 위치로 텔레포트
+				const margin = CONFIG.TANK_WIDTH * 2;
+				let newX = margin + Math.random() * (CONFIG.WORLD_WIDTH - margin * 2);
+				let attempts = 0;
+				while (attempts < 20) {
+					const surfY = this.terrain.getHeightAt(newX);
+					if (surfY < CONFIG.PLAY_HEIGHT - 10) break;
+					newX = margin + Math.random() * (CONFIG.WORLD_WIDTH - margin * 2);
+					attempts++;
+				}
+				// 텔레포트 이펙트
+				const oldX = this.tanks[player].x;
+				const oldY = this.tanks[player].y;
+				screenFlash(this, 0xe91e63, 200, 0.3);
+				this.tanks[player].x = newX;
+				this.tanks[player].settleOnTerrain();
+				// 출발점 이펙트
+				const sparkGfx = this.add.graphics();
+				sparkGfx.setDepth(15);
+				sparkGfx.fillStyle(0xe91e63, 0.6);
+				sparkGfx.fillCircle(oldX, oldY, 20);
+				this.tweens.add({ targets: sparkGfx, alpha: 0, scaleX: 2, scaleY: 2, duration: 400, onComplete: () => sparkGfx.destroy() });
+				// 카메라 이동
+				this.cameras.main.pan(this.tanks[player].x, this.tanks[player].y - 40, 500, "Sine.easeInOut");
+				break;
+			}
 			// 디버프 (턴 소모 — 상대에게 적용)
 			case "angleLock": {
 				const opponent = player === 0 ? 1 : 0;
@@ -1007,6 +1044,16 @@ export class GameScene extends Phaser.Scene {
 			// 드릴: 지형 관통 후 추가 폭발
 			this.terrain.explode(x, y + 25, explosionRadius * 0.7);
 			this.terrain.explode(x, y + 50, explosionRadius * 0.5);
+		} else if (proj.weapon.special === "dirtball") {
+			// 흙덩이: 지형 추가 (파괴 대신)
+			this.terrain.addDirt(x, y, explosionRadius);
+			// 탱크가 묻히면 이동 불가 + 소량 데미지
+			for (const tank of this.tanks) {
+				if (this.terrain.isSolid(tank.x, tank.y - 5)) {
+					tank.takeDamage(5);
+					tank.settleOnTerrain();
+				}
+			}
 		}
 
 		// 향상된 폭발 이펙트 — 2단계 파티클
@@ -1372,6 +1419,11 @@ export class GameScene extends Phaser.Scene {
 		this.inputHandler.activeTank = tank;
 		this.inputHandler.maxPower = currentType.maxPower;
 		this.inputHandler.currentWind = this.windSystem.currentWind;
+
+		// 키보드 조준 업데이트
+		if (this.keyboardAim) {
+			this.keyboardAim.setActiveTank(tank);
+		}
 
 		// 턴 마커 전환
 		for (let i = 0; i < this.tanks.length; i++) {

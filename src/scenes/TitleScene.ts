@@ -378,11 +378,11 @@ export class TitleScene extends Phaser.Scene {
 			});
 			modal.add(randomBtn);
 
-			// 맵 그리드 (2행 4열)
-			const cardW = 120;
-			const cardH = 70;
-			const gap = 8;
-			const cols = 4;
+			// 맵 그리드 (2행 5열)
+			const cardW = 95;
+			const cardH = 65;
+			const gap = 6;
+			const cols = 5;
 			const totalW = cols * cardW + (cols - 1) * gap;
 			const startX = cx - totalW / 2 + cardW / 2;
 			let row = 0;

@@ -71,12 +71,25 @@ export interface TankTypeDef {
 	style: TankStyle;
 }
 
-/** 캐논 (고전) - 균형 잡힌 클래식 탱크 */
+/**
+ * ═══ 탱크 밸런싱 철학 ═══
+ * 각 탱크는 명확한 정체성과 트레이드오프를 가짐.
+ * DPS(직격+스플래시 기대치) × 이동성 × 특수능력 ≈ 일정
+ *
+ * 캐논: 올라운더 (★★★ 화력 / ★★★ 이동 / ★★★ 범위)
+ * 호버: 기동형 (★★ 화력 / ★★★★★ 이동 / ★★ 범위)
+ * 중전차: 파워형 (★★★★★ 화력 / ★ 이동 / ★★★★ 범위)
+ * 미사일: 저격형 (★★★★ 화력 / ★★ 이동 / ★ 범위) — 장거리
+ * 레이저: 정밀형 (★★★★ 직격 / ★★ 이동 / ☆ 범위) — 바람 무시
+ * 카타펄트: 범위형 (★ 직격 / ★ 이동 / ★★★★★ 범위) — 회피 불가
+ */
+
+/** 캐논 (고전) — 올라운더, 모든 면에서 3성 */
 export const TANK_CANNON: TankTypeDef = {
 	id: "cannon",
 	name: "캐논",
 	era: "classic",
-	description: "균형 잡힌 클래식 전차. 모든 면에서 안정적입니다.",
+	description: "올라운더. 모든 면에서 안정적이지만 특출난 것은 없다.",
 	color: 0xc0392b,
 	colorDark: 0x922b21,
 	width: 40,
@@ -88,26 +101,26 @@ export const TANK_CANNON: TankTypeDef = {
 		{ lx: 0, ly: 10, r: 20 },
 		{ lx: 3, ly: 24, r: 12 },
 	],
-	maxPower: 24,
-	explosionRadius: 40,
-	directDamage: 50,
-	splashDamage: 25,
-	splashRadius: 80,
+	maxPower: 22,
+	explosionRadius: 35,
+	directDamage: 40,
+	splashDamage: 18,
+	splashRadius: 70,
 	projectileRadius: 4,
 	projectileRange: 1.0,
 	angleMin: 0,
 	angleMax: 90,
-	fuel: 150,
+	fuel: 160,
 	windResistance: 0,
 	style: "cannon",
 };
 
-/** 호버 (미래) - 빠르고 가벼운 미래형 탱크 */
+/** 호버 (미래) — 초고속 기동, 화력 약함. 위치 선점 + 아이템 수집에 유리 */
 export const TANK_HOVER: TankTypeDef = {
 	id: "hover",
 	name: "호버",
 	era: "future",
-	description: "빠른 이동과 고속 포탄. 기동력이 뛰어나고 연사력이 좋습니다.",
+	description: "초고속 기동! 아이템 선점과 회피에 강하지만 화력이 약하다.",
 	color: 0x8e44ad,
 	colorDark: 0x6c3483,
 	width: 36,
@@ -119,26 +132,26 @@ export const TANK_HOVER: TankTypeDef = {
 		{ lx: 0, ly: 8, r: 16 },
 		{ lx: 4, ly: 20, r: 9 },
 	],
-	maxPower: 26,
-	explosionRadius: 32,
-	directDamage: 42,
-	splashDamage: 18,
-	splashRadius: 65,
+	maxPower: 20,
+	explosionRadius: 25,
+	directDamage: 30,
+	splashDamage: 12,
+	splashRadius: 50,
 	projectileRadius: 3,
-	projectileRange: 1.3,
-	angleMin: 10,
-	angleMax: 70,
-	fuel: 220,
-	windResistance: 0.15,
+	projectileRange: 1.15,
+	angleMin: 5,
+	angleMax: 80,
+	fuel: 300,
+	windResistance: 0.1,
 	style: "hover",
 };
 
-/** 중전차 (현대) - 느리지만 강력한 현대 중전차 */
+/** 중전차 (현대) — 최강 화력+범위, 극도로 느림. 요새 맵에서 강력 */
 export const TANK_HEAVY: TankTypeDef = {
 	id: "heavy",
 	name: "중전차",
 	era: "modern",
-	description: "둔중하지만 막강한 화력. 큰 폭발 반경으로 제압합니다.",
+	description: "최강 화력! 한 방이 치명적이지만 거의 움직일 수 없다.",
 	color: 0x27ae60,
 	colorDark: 0x1e8449,
 	width: 50,
@@ -150,26 +163,26 @@ export const TANK_HEAVY: TankTypeDef = {
 		{ lx: 0, ly: 14, r: 26 },
 		{ lx: 2, ly: 28, r: 14 },
 	],
-	maxPower: 22,
+	maxPower: 20,
 	explosionRadius: 55,
-	directDamage: 60,
+	directDamage: 55,
 	splashDamage: 28,
-	splashRadius: 105,
+	splashRadius: 100,
 	projectileRadius: 5,
-	projectileRange: 0.85,
+	projectileRange: 0.75,
 	angleMin: 0,
 	angleMax: 75,
-	fuel: 90,
+	fuel: 60,
 	windResistance: 0.2,
 	style: "heavy",
 };
 
-/** 미사일 (현대) - 장거리 정밀 타격 */
+/** 미사일 (현대) — 극한 사거리+직격, 범위 없음. 섬/다리 맵에서 강력 */
 export const TANK_MISSILE: TankTypeDef = {
 	id: "missile",
 	name: "미사일",
 	era: "modern",
-	description: "장거리 정밀 타격. 직격 데미지가 높지만 폭발 범위는 좁습니다.",
+	description: "극한 사거리! 직격이면 치명적이지만 빗나가면 무의미.",
 	color: 0x2c3e50,
 	colorDark: 0x1a252f,
 	width: 42,
@@ -182,25 +195,25 @@ export const TANK_MISSILE: TankTypeDef = {
 		{ lx: -2, ly: 24, r: 11 },
 	],
 	maxPower: 28,
-	explosionRadius: 25,
-	directDamage: 70,
-	splashDamage: 20,
-	splashRadius: 55,
+	explosionRadius: 18,
+	directDamage: 60,
+	splashDamage: 10,
+	splashRadius: 35,
 	projectileRadius: 3,
-	projectileRange: 1.4,
-	angleMin: 20,
+	projectileRange: 1.5,
+	angleMin: 15,
 	angleMax: 85,
-	fuel: 130,
-	windResistance: 0.1,
+	fuel: 120,
+	windResistance: 0.05,
 	style: "missile",
 };
 
-/** 레이저 (미래) - 바람 무시, 정밀 직격 */
+/** 레이저 (미래) — 바람 완전 무시, 높은 직격. 바람 많은 맵에서 강력 */
 export const TANK_LASER: TankTypeDef = {
 	id: "laser",
 	name: "레이저",
 	era: "future",
-	description: "바람을 무시하는 정밀 빔. 폭발은 작지만 직격이 치명적입니다.",
+	description: "바람을 무시하는 정밀 빔! 직격이면 강하지만 스플래시 없음.",
 	color: 0x00bcd4,
 	colorDark: 0x00838f,
 	width: 34,
@@ -212,26 +225,26 @@ export const TANK_LASER: TankTypeDef = {
 		{ lx: 0, ly: 9, r: 16 },
 		{ lx: 3, ly: 22, r: 10 },
 	],
-	maxPower: 26,
-	explosionRadius: 15,
-	directDamage: 65,
-	splashDamage: 8,
-	splashRadius: 30,
+	maxPower: 24,
+	explosionRadius: 10,
+	directDamage: 55,
+	splashDamage: 5,
+	splashRadius: 20,
 	projectileRadius: 2,
-	projectileRange: 1.2,
+	projectileRange: 1.1,
 	angleMin: 0,
 	angleMax: 90,
-	fuel: 100,
-	windResistance: 0.9,
+	fuel: 110,
+	windResistance: 0.95,
 	style: "laser",
 };
 
-/** 카타펄트 (고전) - 넓은 범위 공격, 높은 포물선 */
+/** 카타펄트 (고전) — 초광범위, 회피불가. 직격 최약. 산악/메사 맵에서 강력 */
 export const TANK_CATAPULT: TankTypeDef = {
 	id: "catapult",
 	name: "카타펄트",
 	era: "classic",
-	description: "거대한 폭발 범위! 낮은 데미지지만 회피가 어렵습니다.",
+	description: "거대한 폭발! 어디에 맞아도 데미지가 들어간다. 하지만 직격력은 최약.",
 	color: 0x8d6e63,
 	colorDark: 0x5d4037,
 	width: 48,
@@ -243,16 +256,16 @@ export const TANK_CATAPULT: TankTypeDef = {
 		{ lx: 0, ly: 13, r: 24 },
 		{ lx: -4, ly: 26, r: 10 },
 	],
-	maxPower: 25,
+	maxPower: 22,
 	explosionRadius: 65,
-	directDamage: 32,
-	splashDamage: 25,
-	splashRadius: 130,
+	directDamage: 22,
+	splashDamage: 22,
+	splashRadius: 140,
 	projectileRadius: 6,
-	projectileRange: 0.9,
-	angleMin: 30,
+	projectileRange: 0.85,
+	angleMin: 25,
 	angleMax: 90,
-	fuel: 80,
+	fuel: 70,
 	windResistance: 0,
 	style: "catapult",
 };

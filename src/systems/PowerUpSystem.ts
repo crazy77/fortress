@@ -16,6 +16,7 @@ export type ItemType =
 	// 유틸리티 (즉시 사용, 턴 유지)
 	| "moveUp"       // 이동 거리 2배
 	| "windReverse"  // 바람 방향 반전
+	| "teleport"     // 랜덤 위치 텔레포트
 	// 디버프 (즉시 사용, 턴 소모)
 	| "angleLock"    // 적 각도 고정
 	| "moveLock";    // 적 이동 고정
@@ -43,6 +44,7 @@ export const ITEM_DEFS: ItemDef[] = [
 	// 유틸리티
 	{ type: "moveUp", icon: "👟", name: "이동 UP", color: 0x2ecc71, canAttackAfter: true, desc: "이번 턴 이동 거리 2배" },
 	{ type: "windReverse", icon: "🌀", name: "바람 반전", color: 0x9b59b6, canAttackAfter: true, desc: "바람 방향 즉시 반전" },
+	{ type: "teleport", icon: "✨", name: "텔레포트", color: 0xe91e63, canAttackAfter: true, desc: "안전한 랜덤 위치로 순간이동" },
 	// 디버프 (턴 소모)
 	{ type: "angleLock", icon: "🔒", name: "각도 고정", color: 0x795548, canAttackAfter: false, desc: "적의 조준각 3턴 고정" },
 	{ type: "moveLock", icon: "⛓️", name: "이동 봉쇄", color: 0x607d8b, canAttackAfter: false, desc: "적의 이동 3턴 봉쇄" },
@@ -63,6 +65,7 @@ const DROP_WEIGHTS: { type: ItemType; weight: number }[] = [
 	{ type: "fireUp", weight: 8 },
 	{ type: "moveUp", weight: 10 },
 	{ type: "windReverse", weight: 7 },
+	{ type: "teleport", weight: 6 },
 	{ type: "angleLock", weight: 8 },
 	{ type: "moveLock", weight: 8 },
 ];

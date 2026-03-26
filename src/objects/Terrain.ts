@@ -27,165 +27,353 @@ export interface MapDef {
 }
 
 export const MAP_DEFS: MapDef[] = [
+	// ═══ 1. 초원 — 부드러운 언덕, 정면 대결 ═══
 	{
 		id: "hills",
-		name: "언덕",
+		name: "초원",
 		icon: "⛰️",
 		generate: (W, H) => {
-			const base = H * 0.45;
-			const amp = 70;
-			return genSine(W, base, amp, [0.003, 0.008, 0.02], [1, 0.5, 0.2]);
+			const seed = Math.random() * 100;
+			const heights: number[] = [];
+			for (let x = 0; x < W; x++) {
+				// 3~4개 부드러운 둥근 언덕 (각기 다른 높이)
+				let h = H * 0.55;
+				const hillCount = 3 + Math.floor(seed % 2);
+				for (let i = 0; i < hillCount; i++) {
+					const cx = W * (0.15 + (i / hillCount) * 0.7) + Math.sin(seed + i) * W * 0.05;
+					const width = W * (0.12 + Math.sin(seed * 2 + i) * 0.04);
+					const peak = 60 + Math.sin(seed + i * 3) * 40;
+					const t = (x - cx) / width;
+					h -= peak * Math.exp(-t * t * 2);
+				}
+				// 미세 잔디 울퉁불퉁
+				h += Math.sin(x * 0.05 + seed) * 3;
+				heights.push(Math.floor(h));
+			}
+			return heights;
 		},
 		theme: { surface: "#6abf5e", soil: "#8b6914", rock: "#666666", highlight: "#8ed97e" },
-		traits: { gravity: 1.0, windMultiplier: 1.0, thickness: "normal", hint: "균형 잡힌 기본 지형" },
+		traits: { gravity: 1.0, windMultiplier: 1.0, thickness: "normal", hint: "균형 잡힌 기본 지형. 실력으로 승부!" },
 	},
+	// ═══ 2. 협곡 — 깊은 V자 절벽, 수직 벽면 ═══
 	{
 		id: "canyon",
 		name: "협곡",
 		icon: "🏜️",
 		generate: (W, H) => {
 			const heights: number[] = [];
-			// 양쪽 고지대(높음) + 중앙 골짜기(낮음)
-			const plateauH = H * 0.35; // 양쪽 고지대 높이
-			const valleyH = H * 0.7;   // 골짜기 바닥
-			const center = W / 2;
-			const valleyWidth = W * 0.15;
 			const seed = Math.random() * 100;
+			// 양쪽 높은 절벽 (거의 수직) + 좁은 바닥
 			for (let x = 0; x < W; x++) {
-				const distFromCenter = Math.abs(x - center);
-				const normalized = distFromCenter / valleyWidth;
-				const valleyFactor = Math.exp(-(normalized * normalized));
-				let h = plateauH + valleyFactor * (valleyH - plateauH);
-				// 고지대 미세 변화
-				h += Math.sin(x * 0.005 + seed) * 20 + Math.sin(x * 0.015 + seed * 2) * 10;
-				heights.push(Math.floor(Math.max(H * 0.15, Math.min(H * 0.85, h))));
+				const leftEdge = W * 0.35;
+				const rightEdge = W * 0.65;
+				const plateauH = H * 0.25; // 절벽 위 높이
+				const floorH = H * 0.7;    // 바닥 높이
+
+				let h: number;
+				if (x < leftEdge - 40 || x > rightEdge + 40) {
+					// 절벽 위 고지대 — 거의 평탄
+					h = plateauH + Math.sin(x * 0.008 + seed) * 12;
+				} else if (x >= leftEdge - 40 && x < leftEdge + 20) {
+					// 왼쪽 절벽 — 급경사 낙하
+					const t = (x - (leftEdge - 40)) / 60;
+					h = plateauH + (floorH - plateauH) * (t * t * t); // cubic ease-in
+				} else if (x > rightEdge - 20 && x <= rightEdge + 40) {
+					// 오른쪽 절벽 — 급경사 낙하
+					const t = ((rightEdge + 40) - x) / 60;
+					h = plateauH + (floorH - plateauH) * (t * t * t);
+				} else {
+					// 협곡 바닥 — 좁고 울퉁불퉁
+					h = floorH + Math.sin(x * 0.02 + seed) * 15 + Math.sin(x * 0.07 + seed * 2) * 5;
+				}
+				heights.push(Math.floor(h));
 			}
 			return heights;
 		},
 		theme: { surface: "#d4a574", soil: "#a0522d", rock: "#8b4513", highlight: "#e8c9a0" },
-		traits: { gravity: 1.0, windMultiplier: 1.5, thickness: "thin", hint: "얇은 지형 + 강풍 → 낙사 주의!" },
+		traits: { gravity: 1.0, windMultiplier: 1.5, thickness: "thin", hint: "깊은 절벽! 바운스/드릴탄이 유효" },
 	},
+	// ═══ 3. 섬 — 분리된 3개 섬, 사이에 낭떠러지 ═══
 	{
 		id: "islands",
-		name: "섬",
+		name: "군도",
 		icon: "🏝️",
 		generate: (W, H) => {
 			const heights: number[] = [];
-			// 3개 섬
+			const waterLevel = H * 0.75;
+			// 3개 완전 분리된 섬 (사이에 빈 공간)
 			const islands = [
-				{ cx: W * 0.15, w: W * 0.18, peak: H * 0.45 },
-				{ cx: W * 0.5, w: W * 0.22, peak: H * 0.38 },
-				{ cx: W * 0.82, w: W * 0.16, peak: H * 0.48 },
+				{ cx: W * 0.14, halfW: W * 0.09, peak: H * 0.35, flat: 0.4 },
+				{ cx: W * 0.50, halfW: W * 0.12, peak: H * 0.30, flat: 0.5 },
+				{ cx: W * 0.86, halfW: W * 0.09, peak: H * 0.38, flat: 0.35 },
 			];
 			for (let x = 0; x < W; x++) {
-				let h = H * 0.92; // 바다 수면
+				let h = waterLevel;
 				for (const isl of islands) {
-					const t = (x - isl.cx) / (isl.w / 2);
-					if (Math.abs(t) < 1.5) {
-						const bell = Math.exp(-t * t * 2);
-						h = Math.min(h, isl.peak + (1 - bell) * (H * 0.92 - isl.peak));
+					const dist = Math.abs(x - isl.cx);
+					if (dist < isl.halfW) {
+						const t = dist / isl.halfW;
+						// 평탄 구간 + 급경사 가장자리
+						const flatZone = isl.flat;
+						let elevation: number;
+						if (t < flatZone) {
+							elevation = 1; // 평탄한 상단
+						} else {
+							const edgeT = (t - flatZone) / (1 - flatZone);
+							elevation = 1 - edgeT * edgeT; // quadratic drop
+						}
+						const islandH = isl.peak + (waterLevel - isl.peak) * (1 - elevation);
+						h = Math.min(h, islandH);
 					}
 				}
-				// 약간의 노이즈
-				h += Math.sin(x * 0.03) * 8 + Math.sin(x * 0.007) * 15;
 				heights.push(Math.floor(h));
 			}
 			return heights;
 		},
 		theme: { surface: "#4caf50", soil: "#795548", rock: "#5d4037", highlight: "#81c784" },
-		traits: { gravity: 1.0, windMultiplier: 0.5, thickness: "thin", hint: "섬 사이 낙사 위험! 바람 약함" },
+		traits: { gravity: 1.0, windMultiplier: 0.6, thickness: "thin", hint: "분리된 섬! 이동 불가, 정확한 조준만이 살길" },
 	},
+	// ═══ 4. 계단 — 계단식 단차 지형 ═══
 	{
-		id: "plains",
-		name: "평지",
-		icon: "🌾",
+		id: "stairs",
+		name: "계단",
+		icon: "🪜",
 		generate: (W, H) => {
-			const base = H * 0.48;
-			return genSine(W, base, 20, [0.002, 0.008], [1, 0.3]);
+			const heights: number[] = [];
+			const stepCount = 6 + Math.floor(Math.random() * 3);
+			const stepW = W / stepCount;
+			const minH = H * 0.2;
+			const maxH = H * 0.7;
+			const ascending = Math.random() > 0.5; // 오르막 or 내리막
+			for (let x = 0; x < W; x++) {
+				const stepIdx = Math.floor(x / stepW);
+				const inStep = (x % stepW) / stepW;
+				// 계단 높이
+				const t = stepIdx / (stepCount - 1);
+				const stepH = ascending ? minH + (maxH - minH) * t : maxH - (maxH - minH) * t;
+				// 계단 가장자리에서 급전환 (수직에 가까움)
+				let h: number;
+				if (inStep < 0.08) {
+					// 이전 단과의 전환부
+					const prevH = stepIdx === 0 ? stepH : (ascending ? minH + (maxH - minH) * ((stepIdx - 1) / (stepCount - 1)) : maxH - (maxH - minH) * ((stepIdx - 1) / (stepCount - 1)));
+					h = prevH + (stepH - prevH) * (inStep / 0.08);
+				} else {
+					h = stepH + Math.sin(x * 0.03) * 3; // 미세 표면
+				}
+				heights.push(Math.floor(h));
+			}
+			return heights;
 		},
-		theme: { surface: "#8bc34a", soil: "#795548", rock: "#616161", highlight: "#aed581" },
-		traits: { gravity: 1.0, windMultiplier: 1.3, thickness: "thick", hint: "두꺼운 지형 + 강풍 → 정면 화력전" },
+		theme: { surface: "#a1887f", soil: "#8d6e63", rock: "#5d4037", highlight: "#bcaaa4" },
+		traits: { gravity: 1.0, windMultiplier: 0.8, thickness: "thick", hint: "계단식 고저차! 고지대 점령이 핵심" },
 	},
+	// ═══ 5. 산악 — 뾰족한 지그재그 봉우리 ═══
 	{
 		id: "mountains",
 		name: "산악",
 		icon: "🗻",
 		generate: (W, H) => {
-			const base = H * 0.5;
-			const amp = 120;
-			const heights = genSine(W, base, amp, [0.002, 0.006, 0.015, 0.04], [1, 0.7, 0.3, 0.1]);
-			// 뾰족한 봉우리 강조
+			const heights: number[] = [];
+			const seed = Math.random() * 100;
+			// 무작위 뾰족 봉우리 (삼각형 기반)
+			const peakCount = 5 + Math.floor(Math.random() * 4);
+			const peaks: { x: number; h: number; w: number }[] = [];
+			for (let i = 0; i < peakCount; i++) {
+				peaks.push({
+					x: W * (0.05 + Math.random() * 0.9),
+					h: H * (0.15 + Math.random() * 0.25),
+					w: W * (0.04 + Math.random() * 0.08),
+				});
+			}
 			for (let x = 0; x < W; x++) {
-				heights[x] = Math.max(H * 0.15, heights[x]);
+				let h = H * 0.65; // 기본 높은 바닥
+				for (const peak of peaks) {
+					const dist = Math.abs(x - peak.x);
+					if (dist < peak.w) {
+						// 삼각형 봉우리 (뾰족함)
+						const peakH = peak.h + (h - peak.h) * (dist / peak.w);
+						h = Math.min(h, peakH);
+					}
+				}
+				// 약간의 노이즈로 자연스러움 추가
+				h += Math.sin(x * 0.04 + seed) * 5 + Math.sin(x * 0.1 + seed * 2) * 2;
+				heights.push(Math.floor(h));
 			}
 			return heights;
 		},
 		theme: { surface: "#78909c", soil: "#546e7a", rock: "#37474f", highlight: "#90a4ae" },
-		traits: { gravity: 1.2, windMultiplier: 2.0, thickness: "normal", hint: "고중력 + 폭풍 → 짧은 사거리, 강한 바람" },
+		traits: { gravity: 1.15, windMultiplier: 1.8, thickness: "normal", hint: "뾰족한 봉우리 사이로 정밀 사격! 고중력+강풍" },
 	},
+	// ═══ 6. 요새 — 양쪽 성벽 구조물 + 평탄한 중앙 ═══
 	{
 		id: "fortress",
 		name: "요새",
 		icon: "🏰",
 		generate: (W, H) => {
 			const heights: number[] = [];
-			const base = H * 0.5;
+			const baseFloor = H * 0.55;
 			for (let x = 0; x < W; x++) {
-				let h = base + Math.sin(x * 0.003) * 30;
-				// 양쪽 끝에 높은 고지대 (요새)
-				const leftDist = x / (W * 0.2);
-				const rightDist = (W - x) / (W * 0.2);
-				if (leftDist < 1) h -= (1 - leftDist) * 120;
-				if (rightDist < 1) h -= (1 - rightDist) * 120;
-				// 중앙 낮은 계곡
-				const centerDist = Math.abs(x - W / 2) / (W * 0.15);
-				if (centerDist < 1) h += (1 - centerDist) * 60;
-				heights.push(Math.floor(Math.max(H * 0.15, h)));
+				let h = baseFloor;
+				// 왼쪽 성벽 (P1 요새) — 두꺼운 벽 + 평탄한 꼭대기
+				const lWallCenter = W * 0.15;
+				const lWallW = W * 0.06;
+				if (Math.abs(x - lWallCenter) < lWallW) {
+					h = H * 0.2; // 높은 성벽
+				}
+				// 왼쪽 성벽 뒤 플랫폼
+				if (x < lWallCenter - lWallW && x > W * 0.02) {
+					h = H * 0.35;
+				}
+				// 오른쪽 성벽 (P2 요새)
+				const rWallCenter = W * 0.85;
+				const rWallW = W * 0.06;
+				if (Math.abs(x - rWallCenter) < rWallW) {
+					h = H * 0.2;
+				}
+				if (x > rWallCenter + rWallW && x < W * 0.98) {
+					h = H * 0.35;
+				}
+				// 중앙: 평탄한 전장 + 작은 장애물
+				if (x > lWallCenter + lWallW + 20 && x < rWallCenter - rWallW - 20) {
+					h = baseFloor;
+					// 중앙 작은 둔덕
+					const mid = W * 0.5;
+					const midDist = Math.abs(x - mid);
+					if (midDist < W * 0.05) {
+						h -= (1 - midDist / (W * 0.05)) * 40;
+					}
+				}
+				heights.push(Math.floor(h));
 			}
 			return heights;
 		},
 		theme: { surface: "#a1887f", soil: "#6d4c41", rock: "#4e342e", highlight: "#bcaaa4" },
-		traits: { gravity: 1.0, windMultiplier: 0.3, thickness: "thick", hint: "거의 무풍 + 두꺼운 요새 → 정밀 조준전" },
+		traits: { gravity: 1.0, windMultiplier: 0.3, thickness: "thick", hint: "성벽 뒤에서 곡사! 드릴탄으로 벽 관통 가능" },
 	},
+	// ═══ 7. 사막 — 부드러운 큰 모래언덕 + 오아시스 ═══
 	{
 		id: "desert",
 		name: "사막",
 		icon: "🏜️",
 		generate: (W, H) => {
-			const base = H * 0.45;
-			const heights = genSine(W, base, 40, [0.002, 0.005, 0.015], [1, 0.6, 0.2]);
-			// 모래 언덕 (부드러운 곡선)
+			const heights: number[] = [];
+			const seed = Math.random() * 100;
 			for (let x = 0; x < W; x++) {
-				heights[x] += Math.sin(x * 0.01 + 2) * 20 * Math.sin(x * 0.003);
+				// 크고 부드러운 모래언덕 (코사인 기반)
+				let h = H * 0.5;
+				h += Math.cos(x * 0.0025 + seed) * 60;
+				h += Math.cos(x * 0.006 + seed * 1.5) * 30;
+				// 풍문 (ripple) — 작은 반복 패턴
+				h += Math.sin(x * 0.03 + seed) * 8 * Math.max(0, Math.sin(x * 0.002));
+				// 오아시스 — 중앙에 움푹 파인 곳
+				const oasisDist = Math.abs(x - W * 0.5) / (W * 0.08);
+				if (oasisDist < 1) {
+					h += (1 - oasisDist * oasisDist) * 50; // 움푹
+				}
+				heights.push(Math.floor(h));
 			}
 			return heights;
 		},
 		theme: { surface: "#f4d03f", soil: "#d4a017", rock: "#b8860b", highlight: "#f9e784" },
-		traits: { gravity: 0.85, windMultiplier: 1.8, thickness: "normal", hint: "저중력 + 모래폭풍 → 포탄이 멀리, 바람에 크게 휘어짐" },
+		traits: { gravity: 0.85, windMultiplier: 1.8, thickness: "normal", hint: "저중력 + 모래폭풍! 포탄이 멀리 날아감" },
 	},
+	// ═══ 8. 화산 — 거대한 원뿔 + 분화구 ═══
 	{
 		id: "volcano",
 		name: "화산",
 		icon: "🌋",
 		generate: (W, H) => {
 			const heights: number[] = [];
-			const base = H * 0.45;
+			const volcCx = W * 0.5;
 			for (let x = 0; x < W; x++) {
-				let h = base + Math.sin(x * 0.003) * 40 + Math.sin(x * 0.01) * 15;
-				// 화산 봉우리 (중앙)
-				const volcDist = Math.abs(x - W / 2) / (W * 0.08);
-				if (volcDist < 2) {
-					const peak = Math.exp(-volcDist * volcDist * 0.5) * 180;
-					h -= peak;
-					// 분화구 (정상 부분 오목)
-					if (volcDist < 0.3) h += 30;
+				const dist = Math.abs(x - volcCx);
+				const maxDist = W * 0.45;
+				// 원뿔 형태 (직선 경사)
+				let h: number;
+				if (dist < maxDist) {
+					h = H * 0.7 - (1 - dist / maxDist) * (H * 0.55);
+				} else {
+					h = H * 0.7;
 				}
-				heights.push(Math.floor(Math.max(H * 0.1, h)));
+				// 분화구 (정상 부근 오목)
+				const craterR = W * 0.04;
+				if (dist < craterR) {
+					h += (1 - dist / craterR) * 50; // 분화구 깊이
+				}
+				// 경사면 울퉁불퉁 (용암류 자국)
+				h += Math.sin(x * 0.015 + dist * 0.02) * 8;
+				h += Math.sin(x * 0.04) * 3;
+				heights.push(Math.floor(h));
 			}
 			return heights;
 		},
 		theme: { surface: "#424242", soil: "#5d4037", rock: "#3e2723", highlight: "#757575" },
-		traits: { gravity: 1.3, windMultiplier: 0.7, thickness: "thin", hint: "고중력 + 얇은 지형 → 포탄이 빨리 떨어지고 낙사 위험" },
+		traits: { gravity: 1.3, windMultiplier: 0.7, thickness: "thin", hint: "가파른 경사 + 고중력! 위에서 쏘면 유리" },
+	},
+	// ═══ 9. 다리 — 중앙에 파괴 가능한 다리 ═══
+	{
+		id: "bridge",
+		name: "다리",
+		icon: "🌉",
+		generate: (W, H) => {
+			const heights: number[] = [];
+			const bridgeH = H * 0.35; // 다리 높이
+			const gapStart = W * 0.3;
+			const gapEnd = W * 0.7;
+			const groundH = H * 0.7;  // 낭떠러지 아래
+			for (let x = 0; x < W; x++) {
+				if (x < gapStart || x > gapEnd) {
+					// 양쪽 대지 — 다리 높이와 같은 수준
+					let h = bridgeH;
+					// 가장자리로 갈수록 약간 높아짐
+					if (x < W * 0.1) h -= (1 - x / (W * 0.1)) * 30;
+					if (x > W * 0.9) h -= (1 - (W - x) / (W * 0.1)) * 30;
+					h += Math.sin(x * 0.01) * 5;
+					heights.push(Math.floor(h));
+				} else {
+					// 다리 구간 — 얇고 평탄한 다리
+					heights.push(Math.floor(bridgeH));
+				}
+			}
+			return heights;
+		},
+		theme: { surface: "#8d6e63", soil: "#6d4c41", rock: "#4e342e", highlight: "#a1887f" },
+		traits: { gravity: 1.0, windMultiplier: 1.0, thickness: "thin", hint: "다리를 파괴하면 적이 낙사! 전략적 사격" },
+	},
+	// ═══ 10. 메사 — 평탄한 고원 + 절벽 ═══
+	{
+		id: "mesa",
+		name: "메사",
+		icon: "🏔️",
+		generate: (W, H) => {
+			const heights: number[] = [];
+			// 3개의 평평한 고원 (서로 다른 높이) + 수직 절벽
+			const mesas = [
+				{ start: W * 0.02, end: W * 0.28, h: H * 0.3 },
+				{ start: W * 0.35, end: W * 0.65, h: H * 0.45 },
+				{ start: W * 0.72, end: W * 0.98, h: H * 0.25 },
+			];
+			for (let x = 0; x < W; x++) {
+				let h = H * 0.72; // 바닥
+				for (const mesa of mesas) {
+					if (x >= mesa.start && x <= mesa.end) {
+						const edgeL = x - mesa.start;
+						const edgeR = mesa.end - x;
+						const edgeDist = Math.min(edgeL, edgeR);
+						if (edgeDist < 15) {
+							// 급경사 가장자리
+							h = mesa.h + (H * 0.72 - mesa.h) * (1 - edgeDist / 15);
+						} else {
+							h = mesa.h + Math.sin(x * 0.02) * 3; // 평탄
+						}
+					}
+				}
+				heights.push(Math.floor(h));
+			}
+			return heights;
+		},
+		theme: { surface: "#d4a574", soil: "#a0522d", rock: "#8b4513", highlight: "#e8c9a0" },
+		traits: { gravity: 1.0, windMultiplier: 1.2, thickness: "normal", hint: "평탄한 고원! 높은 곳이 유리하지만 좁다" },
 	},
 ];
 
@@ -321,6 +509,23 @@ export class Terrain {
 		ctx.lineWidth = 3;
 		ctx.beginPath();
 		ctx.arc(cx, cy, radius + 1, 0, Math.PI * 2);
+		ctx.stroke();
+		ctx.restore();
+		this.canvasTexture.refresh();
+	}
+
+	/** 원형 영역에 지형을 추가 (흙덩이 무기) */
+	addDirt(cx: number, cy: number, radius: number): void {
+		this.alphaMap.fillCircle(cx, cy, radius);
+		const ctx = this.ctx;
+		ctx.save();
+		ctx.fillStyle = this.theme.soil;
+		ctx.beginPath();
+		ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+		ctx.fill();
+		// 표면 테두리
+		ctx.strokeStyle = this.theme.surface;
+		ctx.lineWidth = 2;
 		ctx.stroke();
 		ctx.restore();
 		this.canvasTexture.refresh();
