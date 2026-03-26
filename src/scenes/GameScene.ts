@@ -1171,10 +1171,10 @@ export class GameScene extends Phaser.Scene {
 			let dmg = 0;
 			if (dist < explosionRadius) {
 				dmg = directDamage;
-			} else if (dist < splashRadius) {
+			} else if (dist < splashRadius && splashRadius > explosionRadius) {
 				const ratio =
 					1 - (dist - explosionRadius) / (splashRadius - explosionRadius);
-				dmg = Math.round(splashDamage * ratio);
+				dmg = Math.round(splashDamage * Math.max(0, ratio));
 			}
 
 			// 시대 상성
@@ -1222,7 +1222,7 @@ export class GameScene extends Phaser.Scene {
 			if (dmg > 0 && tank.playerIndex !== currentPlayer) {
 				const upgrade = this.roundUpgrades[currentPlayer];
 				if (upgrade > 0) {
-					dmg = Math.round(dmg * (1 + upgrade * 0.05)); // 승리당 +5%
+					dmg = Math.round(dmg * (1 + Math.min(upgrade * 0.05, 0.25))); // 승리당 +5%, 최대 +25% 캡
 				}
 			}
 
@@ -1298,7 +1298,7 @@ export class GameScene extends Phaser.Scene {
 		const step = (spread * 2) / fireCount;
 
 		for (let i = 0; i < fireCount; i++) {
-			const fx = cx - spread + i * step;
+			const fx = Phaser.Math.Clamp(cx - spread + i * step, 5, CONFIG.WORLD_WIDTH - 5);
 			const fy = this.terrain.getHeightAt(fx);
 
 			// 작은 폭발
@@ -1499,6 +1499,8 @@ export class GameScene extends Phaser.Scene {
 			});
 
 			this.time.delayedCall(2500, () => {
+				// 리소스 정리 (메모리 누수 방지)
+				for (const tank of this.tanks) tank.cleanup();
 				this.itemManager.destroyAll();
 				if (this.weatherSystem) this.weatherSystem.destroy();
 				if (this.waterEffect) this.waterEffect.destroy();

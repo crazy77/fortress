@@ -106,7 +106,8 @@ export function drawPanel(
 
 	// 상단 하이라이트 (유리 효과)
 	gfx.fillStyle(0xffffff, 0.03);
-	gfx.fillRoundedRect(x + 1, y + 1, w - 2, h * 0.4, { tl: radius - 1, tr: radius - 1, bl: 0, br: 0 });
+	const hlR = Math.max(1, radius - 1);
+	gfx.fillRoundedRect(x + 1, y + 1, w - 2, h * 0.4, { tl: hlR, tr: hlR, bl: 0, br: 0 });
 
 	// 테두리
 	gfx.lineStyle(1.5, borderColor, borderAlpha);

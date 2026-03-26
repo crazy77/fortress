@@ -31,7 +31,7 @@ export class Tank {
 	private isIdleAnimating = false;
 	/** 머즐 플래시 그래픽 */
 	private muzzleFlashGfx: Phaser.GameObjects.Graphics;
-	/** 애니메이션용 컨테이너 — body/barrel의 부모 역할 (흔들림/반동 적용) */
+	// biome-ignore lint/correctness/noUnusedPrivateClassMembers: reserved for future animation container
 	private animContainer: Phaser.GameObjects.Container;
 
 	constructor(
@@ -163,6 +163,7 @@ export class Tank {
 	takeDamage(amount: number): void {
 		if (amount <= 0) return;
 		this.health = Math.max(0, this.health - amount);
+		this.stopIdleAnimation();
 		this.flashWhite();
 		this.showDamagePopup(amount);
 		this.playHitAnimation(amount);
@@ -177,6 +178,8 @@ export class Tank {
 
 	heal(amount: number): void {
 		this.health = Math.min(CONFIG.TANK_HP, this.health + amount);
+		this.drawBody(); // HP 바 및 손상 상태 시각 갱신
+		this.drawBarrel();
 		// 힐 이펙트
 		const turret = this.getTurretPosition();
 		const txt = this.scene.add.text(turret.x, turret.y - 20, `+${amount}`, {
@@ -1605,6 +1608,24 @@ export class Tank {
 	/** AI 대전 시 이름 변경 */
 	setDisplayName(name: string): void {
 		this.nameLabel.setText(name);
+	}
+
+	/** 씬 재시작 전 모든 리소스 정리 */
+	cleanup(): void {
+		this.stopIdleAnimation();
+		this.scene.tweens.killTweensOf(this.body);
+		this.scene.tweens.killTweensOf(this.barrel);
+		this.scene.tweens.killTweensOf(this.turnMarker);
+		this.scene.tweens.killTweensOf(this.hpBarGfx);
+		this.scene.tweens.killTweensOf(this.muzzleFlashGfx);
+		if (this.flashTimer) { this.flashTimer.destroy(); this.flashTimer = null; }
+		this.body.destroy();
+		this.barrel.destroy();
+		this.hpBarGfx.destroy();
+		this.muzzleFlashGfx.destroy();
+		this.animContainer.destroy();
+		this.nameLabel.destroy();
+		this.turnMarker.destroy();
 	}
 
 	private drawDamageMarks(): void {
