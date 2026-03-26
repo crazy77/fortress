@@ -456,8 +456,11 @@ export class Terrain {
 
 		ctx.clearRect(0, 0, WORLD_WIDTH, PLAY_HEIGHT);
 
-		// 암석층
-		ctx.fillStyle = rock;
+		// ── 1. 암석층 (바닥 → 그라데이션) ──
+		const rockGrad = ctx.createLinearGradient(0, PLAY_HEIGHT * 0.5, 0, PLAY_HEIGHT);
+		rockGrad.addColorStop(0, rock);
+		rockGrad.addColorStop(1, this.darkenColor(rock, 0.6));
+		ctx.fillStyle = rockGrad;
 		ctx.beginPath();
 		ctx.moveTo(0, PLAY_HEIGHT);
 		for (let x = 0; x < WORLD_WIDTH; x++) ctx.lineTo(x, this.heights[x]);
@@ -465,51 +468,115 @@ export class Terrain {
 		ctx.closePath();
 		ctx.fill();
 
-		// 토양층
-		ctx.fillStyle = soil;
+		// ── 2. 토양층 (중간, 그라데이션) ──
+		const soilDepth = 45;
+		const soilGrad = ctx.createLinearGradient(0, 0, 0, soilDepth);
+		soilGrad.addColorStop(0, soil);
+		soilGrad.addColorStop(1, this.darkenColor(soil, 0.7));
+		ctx.fillStyle = soilGrad;
 		ctx.beginPath();
-		ctx.moveTo(0, Math.min(PLAY_HEIGHT, this.heights[0] + 40));
+		ctx.moveTo(0, Math.min(PLAY_HEIGHT, this.heights[0] + soilDepth));
 		for (let x = 0; x < WORLD_WIDTH; x++) ctx.lineTo(x, this.heights[x]);
-		ctx.lineTo(WORLD_WIDTH - 1, Math.min(PLAY_HEIGHT, this.heights[WORLD_WIDTH - 1] + 40));
-		for (let x = WORLD_WIDTH - 1; x >= 0; x--) ctx.lineTo(x, Math.min(PLAY_HEIGHT, this.heights[x] + 40));
+		ctx.lineTo(WORLD_WIDTH - 1, Math.min(PLAY_HEIGHT, this.heights[WORLD_WIDTH - 1] + soilDepth));
+		for (let x = WORLD_WIDTH - 1; x >= 0; x--) ctx.lineTo(x, Math.min(PLAY_HEIGHT, this.heights[x] + soilDepth));
 		ctx.closePath();
 		ctx.fill();
 
-		// 표면층
+		// ── 3. 표면층 (잔디/표면, 그라데이션) ──
+		const surfaceDepth = 8;
 		ctx.fillStyle = surface;
 		ctx.beginPath();
-		ctx.moveTo(0, Math.min(PLAY_HEIGHT, this.heights[0] + 5));
+		ctx.moveTo(0, Math.min(PLAY_HEIGHT, this.heights[0] + surfaceDepth));
 		for (let x = 0; x < WORLD_WIDTH; x++) ctx.lineTo(x, this.heights[x]);
-		ctx.lineTo(WORLD_WIDTH - 1, Math.min(PLAY_HEIGHT, this.heights[WORLD_WIDTH - 1] + 5));
-		for (let x = WORLD_WIDTH - 1; x >= 0; x--) ctx.lineTo(x, Math.min(PLAY_HEIGHT, this.heights[x] + 5));
+		ctx.lineTo(WORLD_WIDTH - 1, Math.min(PLAY_HEIGHT, this.heights[WORLD_WIDTH - 1] + surfaceDepth));
+		for (let x = WORLD_WIDTH - 1; x >= 0; x--) ctx.lineTo(x, Math.min(PLAY_HEIGHT, this.heights[x] + surfaceDepth));
 		ctx.closePath();
 		ctx.fill();
 
-		// 표면 하이라이트
+		// ── 4. 표면 하이라이트 (밝은 선) ──
 		ctx.strokeStyle = highlight;
-		ctx.lineWidth = 2;
+		ctx.lineWidth = 2.5;
+		ctx.lineCap = "round";
+		ctx.shadowColor = highlight;
+		ctx.shadowBlur = 4;
 		ctx.beginPath();
 		ctx.moveTo(0, this.heights[0]);
 		for (let x = 1; x < WORLD_WIDTH; x++) ctx.lineTo(x, this.heights[x]);
 		ctx.stroke();
+		ctx.shadowBlur = 0;
+
+		// ── 5. 표면 하단 그림자 (깊이감) ──
+		ctx.strokeStyle = "rgba(0, 0, 0, 0.15)";
+		ctx.lineWidth = 1.5;
+		ctx.beginPath();
+		ctx.moveTo(0, this.heights[0] + 3);
+		for (let x = 1; x < WORLD_WIDTH; x++) ctx.lineTo(x, this.heights[x] + 3);
+		ctx.stroke();
+
+		// ── 6. 노이즈 텍스처 (지형에 작은 점 패턴) ──
+		ctx.globalAlpha = 0.08;
+		for (let x = 0; x < WORLD_WIDTH; x += 3) {
+			const hy = this.heights[x];
+			for (let y = hy; y < Math.min(PLAY_HEIGHT, hy + 80); y += 4) {
+				if (Math.random() < 0.3) {
+					ctx.fillStyle = Math.random() < 0.5 ? "#000000" : "#ffffff";
+					ctx.fillRect(x, y, 1, 1);
+				}
+			}
+		}
+		ctx.globalAlpha = 1;
+
+		// ── 7. 표면 풀/돌 디테일 ──
+		ctx.globalAlpha = 0.4;
+		for (let x = 0; x < WORLD_WIDTH; x += 12 + Math.floor(Math.random() * 20)) {
+			const hy = this.heights[x];
+			if (hy >= PLAY_HEIGHT - 5) continue;
+			// 작은 풀/돌 표시
+			ctx.fillStyle = highlight;
+			const size = 1 + Math.random() * 2;
+			ctx.fillRect(x, hy - size, size, size);
+		}
+		ctx.globalAlpha = 1;
+	}
+
+	/** CSS 색상 문자열을 어둡게 */
+	private darkenColor(hex: string, factor: number): string {
+		const r = Number.parseInt(hex.slice(1, 3), 16);
+		const g = Number.parseInt(hex.slice(3, 5), 16);
+		const b = Number.parseInt(hex.slice(5, 7), 16);
+		return `rgb(${Math.floor(r * factor)}, ${Math.floor(g * factor)}, ${Math.floor(b * factor)})`;
 	}
 
 	explode(cx: number, cy: number, radius: number): void {
 		this.alphaMap.clearCircle(cx, cy, radius);
 		const ctx = this.ctx;
+		// 1. 지형 제거
 		ctx.save();
 		ctx.globalCompositeOperation = "destination-out";
 		ctx.beginPath();
 		ctx.arc(cx, cy, radius, 0, Math.PI * 2);
 		ctx.fill();
 		ctx.restore();
+		// 2. 크레이터 림 (어두운 테두리 — 깊이감)
 		ctx.save();
 		ctx.globalCompositeOperation = "source-atop";
-		ctx.strokeStyle = "rgba(68, 51, 34, 0.3)";
-		ctx.lineWidth = 3;
+		// 외곽 그림자
+		ctx.strokeStyle = "rgba(0, 0, 0, 0.4)";
+		ctx.lineWidth = 4;
 		ctx.beginPath();
 		ctx.arc(cx, cy, radius + 1, 0, Math.PI * 2);
 		ctx.stroke();
+		// 내곽 갈색 테두리 (흙 단면)
+		ctx.strokeStyle = this.theme.soil;
+		ctx.lineWidth = 2;
+		ctx.beginPath();
+		ctx.arc(cx, cy, radius + 2, 0, Math.PI * 2);
+		ctx.stroke();
+		// 스코치마크 (반투명 검정)
+		ctx.fillStyle = "rgba(30, 20, 10, 0.2)";
+		ctx.beginPath();
+		ctx.arc(cx, cy, radius + 5, 0, Math.PI * 2);
+		ctx.fill();
 		ctx.restore();
 		this.canvasTexture.refresh();
 	}

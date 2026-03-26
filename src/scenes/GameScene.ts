@@ -211,15 +211,16 @@ export class GameScene extends Phaser.Scene {
 		this.keyboardAim.setActiveTank(this.tanks[first]);
 		this.keyboardAim.onFire = (aim) => this.fire(aim.angle, aim.power);
 
-		// 폭발 파티클 — 향상된 이펙트
+		// 폭발 파티클 — 프리미엄 이펙트
 		this.explosionEmitter = this.add.particles(0, 0, "__DEFAULT", {
-			speed: { min: 60, max: 250 },
-			scale: { start: 0.5, end: 0 },
-			lifespan: 700,
-			tint: [0xff4400, 0xff8800, 0xffcc00, 0xff6600, 0x444444],
+			speed: { min: 40, max: 300 },
+			scale: { start: 0.6, end: 0 },
+			lifespan: 900,
+			tint: [0xff3300, 0xff6600, 0xffaa00, 0xffdd44, 0xff4400, 0x666666, 0x333333],
 			emitting: false,
-			quantity: 25,
+			quantity: 30,
 			alpha: { start: 1, end: 0 },
+			rotate: { min: 0, max: 360 },
 		});
 		this.explosionEmitter.setDepth(6);
 
@@ -456,40 +457,56 @@ export class GameScene extends Phaser.Scene {
 
 		this.minimapGfx.clear();
 
-		// 지형 실루엣 (간략 — 10px 간격 샘플링)
-		this.minimapGfx.lineStyle(1.5, 0x6abf5e, 0.7);
+		// 지형 (채운 영역으로 표시 — 더 읽기 쉬움)
+		this.minimapGfx.fillStyle(0x4a6741, 0.5);
 		this.minimapGfx.beginPath();
-		for (let wx = 0; wx < CONFIG.WORLD_WIDTH; wx += 10) {
+		this.minimapGfx.moveTo(mmX, mmY + mmH);
+		for (let wx = 0; wx < CONFIG.WORLD_WIDTH; wx += 5) {
 			const wy = this.terrain.getHeightAt(wx);
-			const mx = mmX + wx * scaleX;
-			const my = mmY + wy * scaleY;
-			if (wx === 0) this.minimapGfx.moveTo(mx, my);
-			else this.minimapGfx.lineTo(mx, my);
+			this.minimapGfx.lineTo(mmX + wx * scaleX, mmY + wy * scaleY);
+		}
+		this.minimapGfx.lineTo(mmX + mmW, mmY + mmH);
+		this.minimapGfx.closePath();
+		this.minimapGfx.fillPath();
+		// 지형 표면 선
+		this.minimapGfx.lineStyle(1, 0x8bc34a, 0.8);
+		this.minimapGfx.beginPath();
+		for (let wx = 0; wx < CONFIG.WORLD_WIDTH; wx += 5) {
+			const wy = this.terrain.getHeightAt(wx);
+			if (wx === 0) this.minimapGfx.moveTo(mmX + wx * scaleX, mmY + wy * scaleY);
+			else this.minimapGfx.lineTo(mmX + wx * scaleX, mmY + wy * scaleY);
 		}
 		this.minimapGfx.strokePath();
 
-		// 탱크 위치
+		// 탱크 위치 (더 크게, 더 선명하게)
 		for (const tank of this.tanks) {
 			const color = tank.playerIndex === 0 ? 0xe74c3c : 0x3498db;
 			const tx = mmX + tank.x * scaleX;
 			const ty = mmY + tank.y * scaleY;
-			this.minimapGfx.fillStyle(color, 1);
-			this.minimapGfx.fillCircle(tx, ty, 3);
 
-			// 현재 턴 탱크 강조
+			// 현재 턴 탱크: 글로우 효과
 			if (tank.playerIndex === this.turnManager.currentPlayer) {
-				this.minimapGfx.lineStyle(1, color, 0.6);
-				this.minimapGfx.strokeCircle(tx, ty, 5);
+				this.minimapGfx.fillStyle(color, 0.3);
+				this.minimapGfx.fillCircle(tx, ty, 7);
+				this.minimapGfx.lineStyle(1.5, color, 0.8);
+				this.minimapGfx.strokeCircle(tx, ty, 6);
 			}
+			this.minimapGfx.fillStyle(color, 1);
+			this.minimapGfx.fillCircle(tx, ty, 3.5);
+			// 흰색 테두리
+			this.minimapGfx.lineStyle(1, 0xffffff, 0.6);
+			this.minimapGfx.strokeCircle(tx, ty, 3.5);
 		}
 
-		// 카메라 뷰 영역 표시
+		// 카메라 뷰 영역 (더 선명한 표시)
 		const cam = this.cameras.main;
 		const vx = mmX + cam.scrollX * scaleX;
 		const vy = mmY + Math.max(0, cam.scrollY) * scaleY;
 		const vw = CONFIG.VIEW_WIDTH * scaleX;
 		const vh = CONFIG.PLAY_HEIGHT * scaleY;
-		this.minimapGfx.lineStyle(1, 0xffffff, 0.4);
+		this.minimapGfx.fillStyle(0xffffff, 0.05);
+		this.minimapGfx.fillRect(vx, vy, vw, Math.min(vh, mmH - (vy - mmY)));
+		this.minimapGfx.lineStyle(1.5, 0xffffff, 0.5);
 		this.minimapGfx.strokeRect(vx, vy, vw, Math.min(vh, mmH - (vy - mmY)));
 	}
 
@@ -502,20 +519,22 @@ export class GameScene extends Phaser.Scene {
 			{ top: [number, number, number]; bottom: [number, number, number] }
 		> = {
 			dawn: { top: [0x2d, 0x1b, 0x69], bottom: [0xff, 0x8c, 0x69] },
-			day: { top: [0x40, 0x80, 0xf0], bottom: [0x87, 0xce, 0xeb] },
+			day: { top: [0x30, 0x70, 0xe8], bottom: [0x87, 0xce, 0xeb] },
 			dusk: { top: [0x1a, 0x0a, 0x3e], bottom: [0xd4, 0x5d, 0x34] },
-			night: { top: [0x0a, 0x0a, 0x1e], bottom: [0x15, 0x1e, 0x3a] },
+			night: { top: [0x05, 0x05, 0x15], bottom: [0x10, 0x18, 0x30] },
 		};
 
 		const pal = palettes[this.timeOfDay];
 		const skyTop = -CONFIG.SKY_HEIGHT;
 		const skyTotal = CONFIG.PLAY_HEIGHT + CONFIG.SKY_HEIGHT;
-		const steps = 30;
+		const steps = 50; // 더 부드러운 그라데이션
 		for (let i = 0; i < steps; i++) {
 			const t = i / steps;
-			const r = Phaser.Math.Linear(pal.top[0], pal.bottom[0], t);
-			const g = Phaser.Math.Linear(pal.top[1], pal.bottom[1], t);
-			const b = Phaser.Math.Linear(pal.top[2], pal.bottom[2], t);
+			// 비선형 그라데이션 (위쪽에 더 많은 단계)
+			const ct = t * t * 0.5 + t * 0.5;
+			const r = Phaser.Math.Linear(pal.top[0], pal.bottom[0], ct);
+			const g = Phaser.Math.Linear(pal.top[1], pal.bottom[1], ct);
+			const b = Phaser.Math.Linear(pal.top[2], pal.bottom[2], ct);
 			const color = (r << 16) | (g << 8) | b;
 			gfx.fillStyle(color);
 			gfx.fillRect(
@@ -526,11 +545,50 @@ export class GameScene extends Phaser.Scene {
 			);
 		}
 
-		// 밤: 별 추가
+		// 태양/달 (시간대별)
+		const celestialX = CONFIG.WORLD_WIDTH * 0.75;
+		const celestialY = -CONFIG.SKY_HEIGHT * 0.3;
+		const celestial = this.add.graphics();
+		celestial.setDepth(-1.8);
+
+		if (this.timeOfDay === "day") {
+			// 태양: 글로우 + 본체
+			celestial.fillStyle(0xfff8e1, 0.08);
+			celestial.fillCircle(celestialX, celestialY, 80);
+			celestial.fillStyle(0xfff176, 0.15);
+			celestial.fillCircle(celestialX, celestialY, 50);
+			celestial.fillStyle(0xffd54f, 0.3);
+			celestial.fillCircle(celestialX, celestialY, 30);
+			celestial.fillStyle(0xffecb3, 0.6);
+			celestial.fillCircle(celestialX, celestialY, 18);
+		} else if (this.timeOfDay === "dawn" || this.timeOfDay === "dusk") {
+			// 석양/새벽 태양: 큰 글로우 + 붉은빛
+			const sunY = celestialY + 80;
+			celestial.fillStyle(0xff8a65, 0.06);
+			celestial.fillCircle(celestialX, sunY, 120);
+			celestial.fillStyle(0xff7043, 0.12);
+			celestial.fillCircle(celestialX, sunY, 60);
+			celestial.fillStyle(0xffab91, 0.25);
+			celestial.fillCircle(celestialX, sunY, 25);
+		} else {
+			// 달: 은빛 글로우
+			celestial.fillStyle(0xcfd8dc, 0.05);
+			celestial.fillCircle(celestialX, celestialY, 60);
+			celestial.fillStyle(0xeceff1, 0.12);
+			celestial.fillCircle(celestialX, celestialY, 30);
+			celestial.fillStyle(0xfafafa, 0.4);
+			celestial.fillCircle(celestialX, celestialY, 16);
+			// 달 크레이터
+			celestial.fillStyle(0xcfd8dc, 0.25);
+			celestial.fillCircle(celestialX - 5, celestialY - 3, 4);
+			celestial.fillCircle(celestialX + 7, celestialY + 4, 3);
+		}
+
+		// 밤: 별 추가 (반짝이는 애니메이션 포함)
 		if (this.timeOfDay === "night") {
 			this.starsGfx = this.add.graphics();
 			this.starsGfx.setDepth(-1.5);
-			for (let i = 0; i < 100; i++) {
+			for (let i = 0; i < 150; i++) {
 				const sx = Math.random() * CONFIG.WORLD_WIDTH;
 				const sy = -CONFIG.SKY_HEIGHT + Math.random() * (CONFIG.PLAY_HEIGHT * 0.5 + CONFIG.SKY_HEIGHT);
 				const size = 0.5 + Math.random() * 1.5;
@@ -1056,18 +1114,35 @@ export class GameScene extends Phaser.Scene {
 			}
 		}
 
-		// 향상된 폭발 이펙트 — 2단계 파티클
-		this.explosionEmitter.explode(25, x, y);
-		// 추가 잔해 파티클
-		this.time.delayedCall(50, () => {
-			this.explosionEmitter.explode(
-				10,
-				x + Phaser.Math.Between(-10, 10),
-				y + Phaser.Math.Between(-10, 10),
-			);
+		// 향상된 폭발 이펙트 — 3단계 파티클 + 플래시
+		this.explosionEmitter.explode(30, x, y);
+		// 2단계: 잔해
+		this.time.delayedCall(40, () => {
+			this.explosionEmitter.explode(12, x + Phaser.Math.Between(-10, 10), y + Phaser.Math.Between(-10, 10));
+		});
+		// 3단계: 연기
+		this.time.delayedCall(120, () => {
+			this.explosionEmitter.explode(8, x + Phaser.Math.Between(-15, 15), y + Phaser.Math.Between(-15, 5));
+		});
+		// 임팩트 플래시 (폭발 크기에 비례)
+		const flashSize = explosionRadius * 2;
+		const flashGfx = this.add.graphics();
+		flashGfx.setDepth(15);
+		flashGfx.fillStyle(0xffffcc, 0.6);
+		flashGfx.fillCircle(x, y, flashSize);
+		flashGfx.fillStyle(0xffffff, 0.3);
+		flashGfx.fillCircle(x, y, flashSize * 0.5);
+		this.tweens.add({
+			targets: flashGfx,
+			alpha: 0,
+			scaleX: 1.5,
+			scaleY: 1.5,
+			duration: 200,
+			ease: "Power3",
+			onComplete: () => flashGfx.destroy(),
 		});
 
-		this.audio.playExplosion();
+		this.audio.playExplosion(explosionRadius / 40);
 
 		// 파워업 드롭 시도
 		this.itemManager.trySpawnAt(this, x, this.terrain);

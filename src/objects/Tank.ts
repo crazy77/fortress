@@ -250,23 +250,80 @@ export class Tank {
 
 	// ─── 렌더링 ───
 
-	private getDamageState(): "normal" | "damaged" | "destroyed" {
+	private getDamageState(): "normal" | "light" | "damaged" | "critical" | "destroyed" {
 		if (this.destroyed) return "destroyed";
+		if (this.health <= CONFIG.TANK_HP * 0.25) return "critical";
 		if (this.health <= CONFIG.TANK_HP * 0.5) return "damaged";
+		if (this.health <= CONFIG.TANK_HP * 0.75) return "light";
 		return "normal";
 	}
 
 	private drawBody(): void {
 		const state = this.getDamageState();
-		if (state === "destroyed") {
-			this.drawTankBody(0x444444, 0x333333);
-			this.drawDestroyedOverlay();
-		} else if (state === "damaged") {
-			this.drawTankBody(this.typeDef.color, this.typeDef.colorDark);
-			this.drawDamageMarks();
-		} else {
-			this.drawTankBody(this.typeDef.color, this.typeDef.colorDark);
+		switch (state) {
+			case "destroyed":
+				this.drawTankBody(0x444444, 0x333333);
+				this.drawDestroyedOverlay();
+				break;
+			case "critical":
+				// 검붉은 색조 + 심한 손상
+				this.drawTankBody(
+					this.blendColor(this.typeDef.color, 0x441111, 0.4),
+					this.blendColor(this.typeDef.colorDark, 0x220000, 0.4),
+				);
+				this.drawDamageMarks();
+				this.drawCriticalFire();
+				break;
+			case "damaged":
+				// 약간 어두운 색조
+				this.drawTankBody(
+					this.blendColor(this.typeDef.color, 0x333333, 0.2),
+					this.blendColor(this.typeDef.colorDark, 0x222222, 0.2),
+				);
+				this.drawDamageMarks();
+				break;
+			case "light":
+				this.drawTankBody(this.typeDef.color, this.typeDef.colorDark);
+				this.drawLightDamage();
+				break;
+			default:
+				this.drawTankBody(this.typeDef.color, this.typeDef.colorDark);
 		}
+	}
+
+	private blendColor(a: number, b: number, t: number): number {
+		const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
+		const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
+		const r = Math.round(ar + (br - ar) * t);
+		const g = Math.round(ag + (bg - ag) * t);
+		const bl = Math.round(ab + (bb - ab) * t);
+		return (r << 16) | (g << 8) | bl;
+	}
+
+	/** 경미한 손상 (75% HP 이하) — 작은 찰과상 */
+	private drawLightDamage(): void {
+		this.body.lineStyle(1, 0x555555, 0.5);
+		const s1 = this.t(5, 12);
+		const e1 = this.t(8, 15);
+		this.body.beginPath();
+		this.body.moveTo(s1.x, s1.y);
+		this.body.lineTo(e1.x, e1.y);
+		this.body.strokePath();
+	}
+
+	/** 심각한 손상 (25% HP 이하) — 불꽃/연기 이펙트 */
+	private drawCriticalFire(): void {
+		// 연기
+		this.body.fillStyle(0x333333, 0.4);
+		const smokePos = this.t(0, this.typeDef.height + 8);
+		this.body.fillCircle(smokePos.x, smokePos.y, 5);
+		this.body.fillCircle(smokePos.x - 3, smokePos.y - 6, 3);
+		// 불꽃
+		this.body.fillStyle(0xff6600, 0.5);
+		const firePos = this.t(2, this.typeDef.height + 4);
+		this.body.fillCircle(firePos.x, firePos.y, 3);
+		this.body.fillStyle(0xffcc00, 0.4);
+		this.body.fillCircle(firePos.x - 1, firePos.y - 2, 2);
 	}
 
 	private drawTankBody(mainColor: number, darkColor: number): void {
@@ -852,21 +909,34 @@ export class Tank {
 	private drawHpBar(turretX: number, turretY: number): void {
 		this.hpBarGfx.clear();
 		if (this.destroyed) return;
-		const barW = 30;
-		const barH = 4;
+		const barW = 40;
+		const barH = 6;
 		const bx = turretX - barW / 2;
-		const by = turretY - 18;
+		const by = turretY - 22;
 
-		this.hpBarGfx.fillStyle(0x000000, 0.4);
-		this.hpBarGfx.fillRoundedRect(bx - 1, by - 1, barW + 2, barH + 2, 2);
+		// 배경 (그림자)
+		this.hpBarGfx.fillStyle(0x000000, 0.5);
+		this.hpBarGfx.fillRoundedRect(bx - 1, by - 1, barW + 2, barH + 2, 3);
 
-		this.hpBarGfx.fillStyle(0x1a1a2e);
-		this.hpBarGfx.fillRect(bx, by, barW, barH);
+		// 어두운 배경
+		this.hpBarGfx.fillStyle(0x1a1a2e, 0.9);
+		this.hpBarGfx.fillRoundedRect(bx, by, barW, barH, 3);
 
+		// HP 채움
 		const ratio = this.health / CONFIG.TANK_HP;
 		const color = ratio > 0.5 ? 0x2ecc71 : ratio > 0.25 ? 0xf39c12 : 0xe74c3c;
-		this.hpBarGfx.fillStyle(color);
-		this.hpBarGfx.fillRect(bx, by, barW * ratio, barH);
+		const fillW = Math.max(barW * ratio, ratio > 0 ? barH : 0);
+		if (fillW > 0) {
+			this.hpBarGfx.fillStyle(color, 1);
+			this.hpBarGfx.fillRoundedRect(bx, by, fillW, barH, 3);
+			// 하이라이트
+			this.hpBarGfx.fillStyle(0xffffff, 0.2);
+			this.hpBarGfx.fillRoundedRect(bx + 1, by + 1, fillW - 2, barH / 2, 2);
+		}
+
+		// 테두리
+		this.hpBarGfx.lineStyle(1, 0xffffff, 0.15);
+		this.hpBarGfx.strokeRoundedRect(bx, by, barW, barH, 3);
 	}
 
 	drawBarrel(): void {
