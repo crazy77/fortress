@@ -460,11 +460,12 @@ export class TitleScene extends Phaser.Scene {
 		const preview = this.add.graphics();
 		const previewW = w - 16;
 		const previewH = h - 30;
-		const heights = def.generate(previewW, previewH);
+		const heights = def.generate(CONFIG.WORLD_WIDTH, CONFIG.PLAY_HEIGHT);
 		preview.lineStyle(1.5, Phaser.Display.Color.ValueToColor(def.theme.surface).color, 0.8);
 		preview.beginPath();
 		for (let px = 0; px < previewW; px++) {
-			const py = -h / 2 + 8 + (heights[Math.floor(px * CONFIG.WORLD_WIDTH / previewW)] / CONFIG.PLAY_HEIGHT) * previewH;
+			const idx = Math.min(Math.floor(px * CONFIG.WORLD_WIDTH / previewW), CONFIG.WORLD_WIDTH - 1);
+			const py = -h / 2 + 8 + (heights[idx] / CONFIG.PLAY_HEIGHT) * previewH;
 			if (px === 0) preview.moveTo(-previewW / 2 + px, py);
 			else preview.lineTo(-previewW / 2 + px, py);
 		}

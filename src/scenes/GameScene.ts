@@ -272,6 +272,19 @@ export class GameScene extends Phaser.Scene {
 		this.events.on("skip-turn", () => this.skipTurn());
 		this.events.on("use-item", (slotIndex: number) => this.useItem(slotIndex));
 
+		// 씬 셧다운 시 정리
+		this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+			this.events.off("skip-turn");
+			this.events.off("use-item");
+			this.cancelAIThink();
+			if (this.weatherSystem) this.weatherSystem.destroy();
+			if (this.waterEffect) this.waterEffect.destroy();
+			if (this.confettiEffect) this.confettiEffect.destroy();
+			if (this.keyboardAim) this.keyboardAim.destroy();
+			for (const tank of this.tanks) tank.cleanup();
+			getBGM().stop();
+		});
+
 		// INTRO 상태로 시작 (AI/입력 모두 차단)
 		this.turnManager.setState(TurnState.INTRO);
 		this.playIntroCamera();
@@ -411,11 +424,9 @@ export class GameScene extends Phaser.Scene {
 		d.on("down", () => onDown(1));
 		d.on("up", () => onUp(1));
 
-		// 턴 스킵 (S 키 또는 Space)
+		// 턴 스킵 (S 키만 — SPACE는 KeyboardAimSystem의 파워 차지와 충돌하므로 제외)
 		const s = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
-		const space = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 		s.on("down", () => this.skipTurn());
-		space.on("down", () => this.skipTurn());
 	}
 
 	/** 현재 턴을 스킵 (발사하지 않고 넘김) */
@@ -1043,6 +1054,7 @@ export class GameScene extends Phaser.Scene {
 		if (isDoubleShot) {
 			const delay = 300; // ms
 			this.time.delayedCall(delay, () => {
+				if (this.turnManager.state !== TurnState.FLIGHT) return; // 턴 종료 시 무시
 				const muzzle2 = tank.getMuzzlePosition();
 				if (weapon.projectileCount > 1) {
 					const count = weapon.projectileCount;
@@ -1589,6 +1601,8 @@ export class GameScene extends Phaser.Scene {
 		this.inputHandler.activeTank = tank;
 		this.inputHandler.maxPower = currentType.maxPower;
 		this.inputHandler.currentWind = this.windSystem.currentWind;
+		// angleLock 디버프 반영
+		this.inputHandler.angleLocked = this.debuffs[nextPlayer].angleLock > 0;
 
 		// 키보드 조준 업데이트
 		if (this.keyboardAim) {

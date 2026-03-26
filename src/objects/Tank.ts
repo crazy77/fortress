@@ -1583,6 +1583,7 @@ export class Tank {
 
 	/** 턴 표시 마커 On/Off */
 	setTurnActive(active: boolean): void {
+		if (!this.turnMarker?.active) return; // cleanup 이후 안전 가드
 		this.turnMarker.setVisible(active);
 		if (active) {
 			// 바운스 애니메이션
