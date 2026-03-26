@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { COLORS, drawPanel } from "../config";
+import { COLORS } from "../config";
 
 // ═══ Achievement Definitions ═══
 

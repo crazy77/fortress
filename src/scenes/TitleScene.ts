@@ -2,11 +2,11 @@ import Phaser from "phaser";
 import { COLORS, CONFIG, drawPanel } from "../config";
 import { ALL_TANKS, type TankEra, type TankTypeDef } from "../objects/TankDefs";
 import { MAP_DEFS, type MapDef } from "../objects/Terrain";
-import { ACHIEVEMENTS, getAchievementManager } from "../systems/AchievementSystem";
+import { getAchievementManager } from "../systems/AchievementSystem";
 import type { AIDifficulty } from "../systems/AIPlayer";
 import { getBGM } from "../systems/BGMSystem";
 import { StatsTracker } from "../systems/GameStats";
-import { ALL_RANKS, getPlayerRank } from "../systems/PlayerRank";
+import { getPlayerRank } from "../systems/PlayerRank";
 
 const ERA_COLORS: Record<TankEra, number> = { classic: 0x8d6e63, modern: 0x27ae60, future: 0x8e44ad };
 const ERA_LABELS: Record<TankEra, string> = { classic: "고전", modern: "현대", future: "미래" };

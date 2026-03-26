@@ -66,7 +66,7 @@ export class KeyboardAimSystem {
 	private inputHint: Phaser.GameObjects.Text;
 
 	// Keyboard objects
-	private keys: {
+	private keys!: {
 		up: Phaser.Input.Keyboard.Key;
 		down: Phaser.Input.Keyboard.Key;
 		left: Phaser.Input.Keyboard.Key;
@@ -168,7 +168,8 @@ export class KeyboardAimSystem {
 		this.inputHint.setVisible(false);
 
 		// --- Keyboard bindings ---
-		const kb = scene.input.keyboard!;
+		if (!scene.input.keyboard) return; // 터치 전용 디바이스 안전 가드
+		const kb = scene.input.keyboard;
 		this.keys = {
 			up: kb.addKey(Phaser.Input.Keyboard.KeyCodes.UP),
 			down: kb.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN),

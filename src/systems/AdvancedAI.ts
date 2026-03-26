@@ -2,7 +2,6 @@ import { CONFIG } from "../config";
 import type { Tank } from "../objects/Tank";
 import type { Terrain } from "../objects/Terrain";
 import type { WeaponSystem } from "./WeaponSystem";
-import type { ItemManager } from "./PowerUpSystem";
 
 export type AIDifficulty = "easy" | "normal" | "hard";
 

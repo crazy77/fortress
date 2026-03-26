@@ -1304,7 +1304,7 @@ export class GameScene extends Phaser.Scene {
 	}
 
 	/** 나팔름 효과: 수평 160px 범위 화염 확산 */
-	private handleNapalmEffect(cx: number, cy: number, attacker: number): void {
+	private handleNapalmEffect(cx: number, _cy: number, attacker: number): void {
 		const spread = 80; // 좌우 80px씩 (총 160px)
 		const fireCount = 8;
 		const step = (spread * 2) / fireCount;

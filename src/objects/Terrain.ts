@@ -320,19 +320,22 @@ export const MAP_DEFS: MapDef[] = [
 			const bridgeH = H * 0.35; // 다리 높이
 			const gapStart = W * 0.3;
 			const gapEnd = W * 0.7;
-			const groundH = H * 0.7;  // 낭떠러지 아래
 			for (let x = 0; x < W; x++) {
-				if (x < gapStart || x > gapEnd) {
-					// 양쪽 대지 — 다리 높이와 같은 수준
+				if (x < gapStart - 30 || x > gapEnd + 30) {
+					// 양쪽 대지 (단단한 지면 — groundH까지)
 					let h = bridgeH;
-					// 가장자리로 갈수록 약간 높아짐
 					if (x < W * 0.1) h -= (1 - x / (W * 0.1)) * 30;
 					if (x > W * 0.9) h -= (1 - (W - x) / (W * 0.1)) * 30;
 					h += Math.sin(x * 0.01) * 5;
 					heights.push(Math.floor(h));
-				} else {
-					// 다리 구간 — 얇고 평탄한 다리
+				} else if (x >= gapStart && x <= gapEnd) {
+					// 다리 구간 — 얇고 평탄한 다리 (아래는 낭떠러지=groundH)
 					heights.push(Math.floor(bridgeH));
+				} else {
+					// 절벽 경사 (대지 → 다리 전환부)
+					const edgeDist = x < gapStart ? gapStart - x : x - gapEnd;
+					const t = edgeDist / 30;
+					heights.push(Math.floor(bridgeH + (1 - t) * 0));
 				}
 			}
 			return heights;
@@ -386,20 +389,6 @@ function clampHeights(heights: number[], H: number): number[] {
 	const minY = Math.floor(H * TERRAIN_MIN_Y_RATIO);
 	const maxY = Math.floor(H * TERRAIN_MAX_Y_RATIO);
 	return heights.map((h) => Math.max(minY, Math.min(maxY, Math.floor(h))));
-}
-
-/** 사인파 합성 유틸 */
-function genSine(W: number, base: number, amp: number, freqs: number[], weights: number[]): number[] {
-	const seed = Math.random() * 100;
-	const heights: number[] = [];
-	for (let x = 0; x < W; x++) {
-		let h = base;
-		for (let i = 0; i < freqs.length; i++) {
-			h += Math.sin(x * freqs[i] + seed + i * 1.7) * amp * (weights[i] ?? 0.2);
-		}
-		heights.push(Math.floor(h));
-	}
-	return heights;
 }
 
 export class Terrain {
