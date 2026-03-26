@@ -102,6 +102,14 @@ export class GameScene extends Phaser.Scene {
 	private resolvedMapId = "";
 	private keyboardAim: KeyboardAimSystem | null = null;
 
+	// ── 게임성 메카닉 ──
+	/** 연속 명중 카운트 (플레이어별) */
+	private comboCount: [number, number] = [0, 0];
+	/** 이번 턴 이동 여부 (매복 보너스 판정) */
+	private movedThisTurn = false;
+	/** 라운드 승리 업그레이드 (플레이어별 누적 승리 수에 따른 보너스) */
+	private roundUpgrades: [number, number] = [0, 0];
+
 	constructor() {
 		super("GameScene");
 	}
@@ -679,6 +687,7 @@ export class GameScene extends Phaser.Scene {
 						if (this.turnManager.fuel > 0) {
 							if (tank.tryMove(this.movingDirection)) {
 								this.turnManager.consumeFuel();
+								this.movedThisTurn = true;
 								this.audio.playMove(this.tankTypes[this.turnManager.currentPlayer].style);
 
 								// 이동 시 파워업 수집 체크
@@ -1153,6 +1162,7 @@ export class GameScene extends Phaser.Scene {
 		this.itemManager.checkFallingAfterExplosion(this.terrain);
 
 		let totalDamage = 0;
+		let hitOpponent = false;
 		for (const tank of this.tanks) {
 			const dist = Phaser.Math.Distance.Between(x, y, tank.x, tank.y);
 			let dmg = 0;
@@ -1174,12 +1184,42 @@ export class GameScene extends Phaser.Scene {
 				dmg = Math.round(dmg * eraMultiplier);
 			}
 
-			// 고도 보너스
+			// 고도 보너스 + 시각 피드백
 			if (dmg > 0 && tank.playerIndex !== currentPlayer) {
 				const attacker = this.tanks[currentPlayer];
 				const heightDiff = tank.y - attacker.y;
 				if (heightDiff > CONFIG.ALTITUDE_BONUS_THRESHOLD) {
 					dmg = Math.round(dmg * CONFIG.ALTITUDE_BONUS_MULTIPLIER);
+					// 고지대 보너스 시각 피드백
+					const bonusTxt = this.add.text(x, y - 30, "⬆ 고지대!", {
+						fontSize: "13px", color: "#f1c40f", stroke: "#000000", strokeThickness: 2, fontStyle: "bold",
+					}).setOrigin(0.5).setDepth(20);
+					this.tweens.add({ targets: bonusTxt, y: bonusTxt.y - 25, alpha: 0, duration: 1000, onComplete: () => bonusTxt.destroy() });
+				}
+			}
+
+			// 분노 모드 (HP 30% 이하 → 1.3배 데미지)
+			if (dmg > 0 && tank.playerIndex !== currentPlayer) {
+				const attacker = this.tanks[currentPlayer];
+				if (attacker.health > 0 && attacker.health <= CONFIG.TANK_HP * 0.3) {
+					dmg = Math.round(dmg * 1.3);
+					const rageTxt = this.add.text(attacker.x, attacker.y - 45, "🔥 분노!", {
+						fontSize: "14px", color: "#ff4444", stroke: "#000000", strokeThickness: 3, fontStyle: "bold",
+					}).setOrigin(0.5).setDepth(20);
+					this.tweens.add({ targets: rageTxt, y: rageTxt.y - 30, alpha: 0, duration: 1200, onComplete: () => rageTxt.destroy() });
+				}
+			}
+
+			// 매복 보너스 (이동 안 했으면 +10% 데미지)
+			if (dmg > 0 && tank.playerIndex !== currentPlayer && !this.movedThisTurn) {
+				dmg = Math.round(dmg * 1.1);
+			}
+
+			// 라운드 업그레이드 보너스
+			if (dmg > 0 && tank.playerIndex !== currentPlayer) {
+				const upgrade = this.roundUpgrades[currentPlayer];
+				if (upgrade > 0) {
+					dmg = Math.round(dmg * (1 + upgrade * 0.05)); // 승리당 +5%
 				}
 			}
 
@@ -1187,7 +1227,6 @@ export class GameScene extends Phaser.Scene {
 			if (dmg > 0 && this.shields[tank.playerIndex] > 0) {
 				dmg = Math.round(dmg * (1 - this.shields[tank.playerIndex]));
 				this.shields[tank.playerIndex] = 0;
-				// 쉴드 파괴 이펙트
 				this.showShieldBreak(tank.x, tank.y);
 			}
 
@@ -1198,10 +1237,27 @@ export class GameScene extends Phaser.Scene {
 
 				if (tank.playerIndex !== currentPlayer) {
 					this.statsTrackers[currentPlayer].recordDamage(dmg);
+					hitOpponent = true;
 				} else {
 					this.selfDamageDealt = true;
 				}
 			}
+		}
+
+		// 콤보 시스템
+		if (hitOpponent) {
+			this.comboCount[currentPlayer]++;
+			const combo = this.comboCount[currentPlayer];
+			if (combo >= 2) {
+				const comboTxt = this.add.text(
+					this.tanks[currentPlayer].x, this.tanks[currentPlayer].y - 55,
+					combo >= 3 ? `🔥 ${combo}연속 명중!` : `✨ ${combo}연속!`,
+					{ fontSize: combo >= 3 ? "18px" : "15px", color: combo >= 3 ? "#ff6600" : "#f1c40f", stroke: "#000000", strokeThickness: 3, fontStyle: "bold" },
+				).setOrigin(0.5).setDepth(20);
+				this.tweens.add({ targets: comboTxt, y: comboTxt.y - 30, alpha: 0, duration: 1200, onComplete: () => comboTxt.destroy() });
+			}
+		} else {
+			this.comboCount[currentPlayer] = 0;
 		}
 
 		this.totalDamageThisSalvo += totalDamage;
@@ -1346,6 +1402,9 @@ export class GameScene extends Phaser.Scene {
 		for (const tank of this.tanks) tank.setTurnActive(false);
 		this.matchManager.recordWin(winner);
 
+		// 라운드 업그레이드: 승자에게 다음 라운드 보너스
+		this.roundUpgrades[winner]++;
+
 		// BGM 전환
 		getBGM().start(winner === 0 ? "victory" : "defeat");
 
@@ -1440,9 +1499,20 @@ export class GameScene extends Phaser.Scene {
 	private endTurn(): void {
 		this.cancelAIThink();
 		this.lastTickSecond = -1;
+		this.movedThisTurn = false;
+
+		// 3연속 명중 시 추가 턴 보너스
+		const currentPlayer = this.turnManager.currentPlayer;
+		if (this.comboCount[currentPlayer] >= 3 && !this.activeBuffs.doubleTurn) {
+			this.activeBuffs.doubleTurn = true;
+			const tank = this.tanks[currentPlayer];
+			const bonusTxt = this.add.text(tank.x, tank.y - 65, "⚡ 콤보 추가 턴!", {
+				fontSize: "16px", color: "#9b59b6", stroke: "#000000", strokeThickness: 3, fontStyle: "bold",
+			}).setOrigin(0.5).setDepth(20);
+			this.tweens.add({ targets: bonusTxt, y: bonusTxt.y - 30, alpha: 0, duration: 1500, onComplete: () => bonusTxt.destroy() });
+		}
 
 		// 더블 턴 체크
-		const currentPlayer = this.turnManager.currentPlayer;
 		if (this.activeBuffs.doubleTurn) {
 			this.activeBuffs.doubleTurn = false;
 			// 같은 플레이어가 다시 플레이 (턴 스위치 건너뛰기)
@@ -1558,6 +1628,8 @@ export class GameScene extends Phaser.Scene {
 			debuffs: this.debuffs,
 			inventory: this.itemManager.inventories.map((inv) => [...inv.items]),
 			timeOfDay: this.timeOfDay,
+			combo: this.comboCount,
+			roundUpgrades: this.roundUpgrades,
 		});
 	}
 }
