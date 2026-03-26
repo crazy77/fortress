@@ -1097,8 +1097,10 @@ export class GameScene extends Phaser.Scene {
 
 		// 특수 무기 효과
 		if (proj.weapon.special === "napalm") {
+			this.audio.playNapalm();
 			this.handleNapalmEffect(x, y, currentPlayer);
 		} else if (proj.weapon.special === "drill") {
+			this.audio.playDrill();
 			// 드릴: 지형 관통 후 추가 폭발
 			this.terrain.explode(x, y + 25, explosionRadius * 0.7);
 			this.terrain.explode(x, y + 50, explosionRadius * 0.5);
@@ -1142,7 +1144,7 @@ export class GameScene extends Phaser.Scene {
 			onComplete: () => flashGfx.destroy(),
 		});
 
-		this.audio.playExplosion(explosionRadius / 40);
+		this.audio.playExplosion(explosionRadius / 40, attackerType.style);
 
 		// 파워업 드롭 시도
 		this.itemManager.trySpawnAt(this, x, this.terrain);
@@ -1190,7 +1192,7 @@ export class GameScene extends Phaser.Scene {
 
 			if (dmg > 0) {
 				tank.takeDamage(dmg);
-				this.audio.playHit();
+				this.audio.playHit(this.tankTypes[tank.playerIndex].style);
 				totalDamage += dmg;
 
 				if (tank.playerIndex !== currentPlayer) {
@@ -1254,7 +1256,7 @@ export class GameScene extends Phaser.Scene {
 						const fireDmg = Math.round(8 * (1 - dist / 25));
 						if (fireDmg > 0) {
 							tank.takeDamage(fireDmg);
-							this.audio.playHit();
+							this.audio.playHit(this.tankTypes[tank.playerIndex].style);
 							if (tank.playerIndex === attacker) {
 								this.selfDamageDealt = true;
 							} else {
