@@ -11,13 +11,17 @@ import {
 import { Terrain } from "../objects/Terrain";
 import type { AIDifficulty } from "../systems/AIPlayer";
 import { AIPlayer } from "../systems/AIPlayer";
+import { type AchievementContext, getAchievementManager, showAchievementPopup } from "../systems/AchievementSystem";
 import { AudioSystem, vibrate } from "../systems/AudioSystem";
+import { getBGM } from "../systems/BGMSystem";
+import { ConfettiEffect, WaterEffect, screenFlash, slowMotionKillCam } from "../systems/EffectsSystem";
 import { StatsTracker } from "../systems/GameStats";
 import { InputHandler } from "../systems/InputHandler";
 import { MatchManager } from "../systems/MatchManager";
 import { ItemManager, getItemDef } from "../systems/PowerUpSystem";
 import { TurnManager, TurnState } from "../systems/TurnManager";
 import { WeaponSystem } from "../systems/WeaponSystem";
+import { WeatherSystem, getWeatherForMap } from "../systems/WeatherSystem";
 import { WindSystem } from "../systems/WindSystem";
 
 export class GameScene extends Phaser.Scene {
@@ -88,6 +92,14 @@ export class GameScene extends Phaser.Scene {
 	private minimapGfx!: Phaser.GameObjects.Graphics;
 	private minimapBg!: Phaser.GameObjects.Graphics;
 
+	// 새 시스템
+	private weatherSystem: WeatherSystem | null = null;
+	private waterEffect: WaterEffect | null = null;
+	private confettiEffect: ConfettiEffect | null = null;
+	private usedItemsCount = 0;
+	private selfDamageDealt = false;
+	private resolvedMapId = "";
+
 	constructor() {
 		super("GameScene");
 	}
@@ -139,9 +151,12 @@ export class GameScene extends Phaser.Scene {
 		this.audio = new AudioSystem();
 		this.weaponSystem = new WeaponSystem();
 		this.itemManager = new ItemManager(2);
+		this.usedItemsCount = 0;
+		this.selfDamageDealt = false;
 
 		this.drawSky();
 		this.terrain = new Terrain(this, this.selectedMapId);
+		this.resolvedMapId = this.terrain.mapId;
 		this.mapGravity = this.terrain.traits.gravity;
 		this.mapWindMul = this.terrain.traits.windMultiplier;
 
@@ -212,6 +227,22 @@ export class GameScene extends Phaser.Scene {
 		this.createMoveButtons();
 		this.setupKeyboard();
 		this.createMinimap();
+
+		// 날씨 시스템
+		const weatherType = getWeatherForMap(this.resolvedMapId, this.timeOfDay);
+		if (weatherType !== "none") {
+			this.weatherSystem = new WeatherSystem(this, weatherType);
+		}
+
+		// 물 애니메이션
+		this.waterEffect = new WaterEffect(this, this.resolvedMapId);
+
+		// 컨페티 이펙트
+		this.confettiEffect = new ConfettiEffect(this);
+
+		// BGM 시작
+		getBGM().setMuted(this.audio.isMuted());
+		getBGM().start("gameplay");
 
 		// UI 씬
 		this.scene.stop("UIScene");
@@ -545,6 +576,14 @@ export class GameScene extends Phaser.Scene {
 		// 파워업 낙하 업데이트 (상태 무관하게 항상)
 		this.itemManager.updateFalling(this.terrain);
 
+		// 날씨/물/컨페티 업데이트
+		if (this.weatherSystem) {
+			this.weatherSystem.setWind(this.windSystem.currentWind);
+			this.weatherSystem.update(delta);
+		}
+		if (this.waterEffect) this.waterEffect.update(delta);
+		if (this.confettiEffect) this.confettiEffect.update(delta);
+
 		// 미니맵 갱신
 		this.updateMinimap();
 
@@ -651,6 +690,7 @@ export class GameScene extends Phaser.Scene {
 
 		this.audio.playPickup();
 		vibrate(20);
+		this.usedItemsCount++;
 		const def = getItemDef(itemType);
 
 		switch (itemType) {
@@ -960,6 +1000,15 @@ export class GameScene extends Phaser.Scene {
 
 		this.terrain.explode(x, y, explosionRadius);
 
+		// 특수 무기 효과
+		if (proj.weapon.special === "napalm") {
+			this.handleNapalmEffect(x, y, currentPlayer);
+		} else if (proj.weapon.special === "drill") {
+			// 드릴: 지형 관통 후 추가 폭발
+			this.terrain.explode(x, y + 25, explosionRadius * 0.7);
+			this.terrain.explode(x, y + 50, explosionRadius * 0.5);
+		}
+
 		// 향상된 폭발 이펙트 — 2단계 파티클
 		this.explosionEmitter.explode(25, x, y);
 		// 추가 잔해 파티클
@@ -1024,11 +1073,19 @@ export class GameScene extends Phaser.Scene {
 
 				if (tank.playerIndex !== currentPlayer) {
 					this.statsTrackers[currentPlayer].recordDamage(dmg);
+				} else {
+					this.selfDamageDealt = true;
 				}
 			}
 		}
 
 		this.totalDamageThisSalvo += totalDamage;
+
+		// BGM 긴장도 업데이트 (양 탱크 중 하나라도 HP 30% 이하면 intense)
+		const anyLowHp = this.tanks.some((t) => t.health > 0 && t.health <= CONFIG.TANK_HP * 0.3);
+		if (anyLowHp) {
+			getBGM().start("intense");
+		}
 
 		const shakeIntensity =
 			(0.005 + (totalDamage / CONFIG.TANK_HP) * 0.02) *
@@ -1048,6 +1105,61 @@ export class GameScene extends Phaser.Scene {
 				this.turnManager.setState(TurnState.CLEANUP);
 			});
 		}
+	}
+
+	/** 나팔름 효과: 수평 160px 범위 화염 확산 */
+	private handleNapalmEffect(cx: number, cy: number, attacker: number): void {
+		const spread = 80; // 좌우 80px씩 (총 160px)
+		const fireCount = 8;
+		const step = (spread * 2) / fireCount;
+
+		for (let i = 0; i < fireCount; i++) {
+			const fx = cx - spread + i * step;
+			const fy = this.terrain.getHeightAt(fx);
+
+			// 작은 폭발
+			this.terrain.explode(fx, fy, 10);
+
+			// 화염 파티클
+			const delay = i * 60;
+			this.time.delayedCall(delay, () => {
+				this.explosionEmitter.explode(5, fx, fy);
+
+				// 화염 데미지 (범위 내 탱크에 소량 데미지)
+				for (const tank of this.tanks) {
+					const dist = Math.abs(tank.x - fx);
+					if (dist < 25) {
+						const fireDmg = Math.round(8 * (1 - dist / 25));
+						if (fireDmg > 0) {
+							tank.takeDamage(fireDmg);
+							this.audio.playHit();
+							if (tank.playerIndex === attacker) {
+								this.selfDamageDealt = true;
+							} else {
+								this.statsTrackers[attacker].recordDamage(fireDmg);
+							}
+						}
+					}
+				}
+			});
+		}
+
+		// 화염 이펙트 시각화
+		const fireGfx = this.add.graphics();
+		fireGfx.setDepth(6);
+		for (let i = 0; i < fireCount * 2; i++) {
+			const fx = cx - spread + Math.random() * spread * 2;
+			const fy = this.terrain.getHeightAt(fx);
+			fireGfx.fillStyle(Phaser.Math.Between(0, 1) ? 0xff4400 : 0xff8800, 0.7);
+			fireGfx.fillCircle(fx, fy - 3, 4 + Math.random() * 6);
+		}
+		this.tweens.add({
+			targets: fireGfx,
+			alpha: 0,
+			duration: 1500,
+			ease: "Power2",
+			onComplete: () => fireGfx.destroy(),
+		});
 	}
 
 	private showShieldBreak(x: number, y: number): void {
@@ -1091,8 +1203,13 @@ export class GameScene extends Phaser.Scene {
 				this.inputHandler.setEnabled(false);
 				this.cancelAIThink();
 				const winner: 0 | 1 = i === 0 ? 1 : 0;
-				this.handleRoundOver(winner);
 				vibrate([100, 50, 200]);
+
+				// 슬로모션 킬캠
+				const deadTank = this.tanks[i];
+				slowMotionKillCam(this, deadTank.x, deadTank.y, () => {
+					this.handleRoundOver(winner);
+				});
 				return;
 			}
 		}
@@ -1103,6 +1220,47 @@ export class GameScene extends Phaser.Scene {
 	private handleRoundOver(winner: 0 | 1): void {
 		for (const tank of this.tanks) tank.setTurnActive(false);
 		this.matchManager.recordWin(winner);
+
+		// BGM 전환
+		getBGM().start(winner === 0 ? "victory" : "defeat");
+
+		// 컨페티 효과
+		if (this.confettiEffect) {
+			this.confettiEffect.shower(150);
+		}
+		screenFlash(this, winner === 0 ? 0x3498db : 0xe74c3c, 300, 0.2);
+
+		// 업적 체크
+		const achCtx: AchievementContext = {
+			won: winner === 0,
+			accuracy: this.statsTrackers[0].getAccuracy(),
+			totalDamage: this.statsTrackers[0].getStats().totalDamageDealt,
+			maxSingleHit: this.statsTrackers[0].getStats().maxSingleHit,
+			turnsPlayed: this.statsTrackers[0].getStats().turnsPlayed,
+			shotsFired: this.statsTrackers[0].getStats().shotsFired,
+			shotsHit: this.statsTrackers[0].getStats().shotsHit,
+			selfDamage: 0,
+			opponentHpLeft: this.tanks[1].health,
+			myHpLeft: this.tanks[0].health,
+			mapId: this.resolvedMapId,
+			tankId: this.tankTypes[0].id,
+			aiEnabled: this.aiEnabled,
+			aiDifficulty: this.aiDifficulty,
+			noSelfDamage: !this.selfDamageDealt,
+			usedItems: this.usedItemsCount,
+			perfectRound: winner === 0 && this.tanks[0].health >= CONFIG.TANK_HP,
+		};
+		const achievements = getAchievementManager().checkAchievements(achCtx);
+
+		// 업적 팝업 표시 (UIScene에서)
+		const uiScene = this.scene.get("UIScene");
+		if (uiScene) {
+			for (let i = 0; i < achievements.length; i++) {
+				this.time.delayedCall(500 + i * 800, () => {
+					showAchievementPopup(uiScene, achievements[i], i * 90);
+				});
+			}
+		}
 
 		if (this.matchManager.isMatchOver()) {
 			const matchWinner = this.matchManager.getMatchWinner() ?? 0;
@@ -1138,6 +1296,9 @@ export class GameScene extends Phaser.Scene {
 
 			this.time.delayedCall(2500, () => {
 				this.itemManager.destroyAll();
+				if (this.weatherSystem) this.weatherSystem.destroy();
+				if (this.waterEffect) this.waterEffect.destroy();
+				if (this.confettiEffect) this.confettiEffect.destroy();
 				this.scene.restart({
 					aiEnabled: this.aiEnabled,
 					aiDifficulty: this.aiDifficulty,

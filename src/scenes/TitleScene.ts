@@ -2,7 +2,9 @@ import Phaser from "phaser";
 import { COLORS, CONFIG, drawPanel } from "../config";
 import { ALL_TANKS, type TankEra, type TankTypeDef } from "../objects/TankDefs";
 import { MAP_DEFS, type MapDef } from "../objects/Terrain";
+import { ACHIEVEMENTS, getAchievementManager } from "../systems/AchievementSystem";
 import type { AIDifficulty } from "../systems/AIPlayer";
+import { getBGM } from "../systems/BGMSystem";
 import { StatsTracker } from "../systems/GameStats";
 
 const ERA_COLORS: Record<TankEra, number> = { classic: 0x8d6e63, modern: 0x27ae60, future: 0x8e44ad };
@@ -42,6 +44,9 @@ export class TitleScene extends Phaser.Scene {
 	create(): void {
 		const cx = CONFIG.VIEW_WIDTH / 2;
 
+		// BGM 시작
+		getBGM().start("title");
+
 		// 배경
 		const bg = this.add.graphics();
 		for (let i = 0; i < 40; i++) {
@@ -51,6 +56,50 @@ export class TitleScene extends Phaser.Scene {
 			const b = Phaser.Math.Linear(0x1a, 0x45, t);
 			bg.fillStyle((r << 16) | (g << 8) | b);
 			bg.fillRect(0, (i / 40) * CONFIG.WORLD_HEIGHT, CONFIG.VIEW_WIDTH, CONFIG.WORLD_HEIGHT / 40 + 1);
+		}
+
+		// 배경 별 파티클 (부유하는 빛 입자)
+		const starGfx = this.add.graphics();
+		starGfx.setDepth(0);
+		for (let i = 0; i < 60; i++) {
+			const sx = Math.random() * CONFIG.VIEW_WIDTH;
+			const sy = Math.random() * CONFIG.WORLD_HEIGHT;
+			const size = 0.5 + Math.random() * 1.5;
+			const alpha = 0.1 + Math.random() * 0.4;
+			starGfx.fillStyle(0xffffff, alpha);
+			starGfx.fillCircle(sx, sy, size);
+		}
+		// 반짝임 애니메이션
+		this.tweens.add({
+			targets: starGfx,
+			alpha: 0.5,
+			duration: 2000,
+			yoyo: true,
+			repeat: -1,
+			ease: "Sine.easeInOut",
+		});
+
+		// 부유하는 장식 파티클
+		for (let i = 0; i < 8; i++) {
+			const particle = this.add.graphics();
+			particle.setDepth(0);
+			const colors = [0x3d5a80, 0x2a3a5c, 0x4a6fa5, 0x6b8cbe];
+			particle.fillStyle(colors[i % colors.length], 0.15);
+			const size = 20 + Math.random() * 40;
+			particle.fillCircle(0, 0, size);
+			const startX = Math.random() * CONFIG.VIEW_WIDTH;
+			const startY = Math.random() * CONFIG.WORLD_HEIGHT;
+			particle.setPosition(startX, startY);
+			this.tweens.add({
+				targets: particle,
+				x: startX + Phaser.Math.Between(-50, 50),
+				y: startY + Phaser.Math.Between(-30, 30),
+				alpha: 0.05 + Math.random() * 0.1,
+				duration: 3000 + Math.random() * 3000,
+				yoyo: true,
+				repeat: -1,
+				ease: "Sine.easeInOut",
+			});
 		}
 
 		// 타이틀
@@ -108,6 +157,24 @@ export class TitleScene extends Phaser.Scene {
 
 		y += 54;
 		this.add.text(cx, y, "드래그: 조준 | A/D: 이동 | S: 스킵", { fontSize: "12px", color: "#556677" }).setOrigin(0.5);
+
+		// 업적 버튼
+		const achMgr = getAchievementManager();
+		const achCount = achMgr.getUnlockedCount();
+		const achTotal = achMgr.getTotalCount();
+		y += 30;
+		const achBtn = this.createBtn(cx, y, 220, 38, `🏆 업적 ${achCount}/${achTotal}`, 0x6c3483, () => this.openAchievementModal());
+		if (achCount > 0) {
+			this.tweens.add({
+				targets: achBtn,
+				scaleX: 1.02,
+				scaleY: 1.02,
+				duration: 1200,
+				yoyo: true,
+				repeat: -1,
+				ease: "Sine.easeInOut",
+			});
+		}
 	}
 
 	// ═══ 선택 행 UI ═══
@@ -510,9 +577,77 @@ export class TitleScene extends Phaser.Scene {
 		gfx.strokePath();
 	}
 
+	// ═══ 업적 모달 ═══
+
+	private openAchievementModal(): void {
+		this.openModal((modal, cx, cardX, cardY, cardW, cardH) => {
+			modal.add(this.add.text(cx, cardY + 30, "🏆 업적", { fontSize: "20px", color: "#ffffff", fontStyle: "bold" }).setOrigin(0.5));
+
+			const achMgr = getAchievementManager();
+			const all = achMgr.getAll();
+
+			const rarityColors: Record<string, number> = {
+				common: 0x95a5a6,
+				rare: 0x3498db,
+				epic: 0x9b59b6,
+				legendary: 0xf1c40f,
+			};
+
+			const cols = 3;
+			const itemW = 160;
+			const itemH = 54;
+			const gap = 8;
+			const totalW = cols * itemW + (cols - 1) * gap;
+			const startX = cx - totalW / 2 + itemW / 2;
+			let row = 0;
+			let col = 0;
+
+			for (const { def, unlocked } of all) {
+				const tx = startX + col * (itemW + gap);
+				const ty = cardY + 70 + row * (itemH + gap);
+
+				const itemBg = this.add.graphics();
+				if (unlocked) {
+					const rc = rarityColors[def.rarity] ?? COLORS.PANEL_BORDER;
+					itemBg.fillStyle(0x0a0e17, 0.9);
+					itemBg.fillRoundedRect(-itemW / 2, -itemH / 2, itemW, itemH, 8);
+					itemBg.lineStyle(1.5, rc, 0.7);
+					itemBg.strokeRoundedRect(-itemW / 2, -itemH / 2, itemW, itemH, 8);
+				} else {
+					itemBg.fillStyle(0x111520, 0.7);
+					itemBg.fillRoundedRect(-itemW / 2, -itemH / 2, itemW, itemH, 8);
+					itemBg.lineStyle(1, 0x333a4c, 0.3);
+					itemBg.strokeRoundedRect(-itemW / 2, -itemH / 2, itemW, itemH, 8);
+				}
+
+				const icon = this.add.text(-itemW / 2 + 10, 0, unlocked ? def.icon : "🔒", {
+					fontSize: "20px",
+				}).setOrigin(0, 0.5);
+
+				const name = this.add.text(-itemW / 2 + 38, -8, unlocked ? def.name : "???", {
+					fontSize: "12px",
+					color: unlocked ? "#ffffff" : "#555555",
+					fontStyle: "bold",
+				});
+
+				const desc = this.add.text(-itemW / 2 + 38, 8, unlocked ? def.description : "미해금", {
+					fontSize: "9px",
+					color: unlocked ? "#8899bb" : "#444444",
+				});
+
+				const container = this.add.container(tx, ty, [itemBg, icon, name, desc]);
+				modal.add(container);
+
+				col++;
+				if (col >= cols) { col = 0; row++; }
+			}
+		});
+	}
+
 	// ═══ 게임 시작 ═══
 
 	private startGame(): void {
+		getBGM().stop();
 		const data: GameModeData = {
 			aiEnabled: this.selectedMode === "ai",
 			aiDifficulty: this.selectedDifficulty,

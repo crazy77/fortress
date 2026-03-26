@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { COLORS, CONFIG, drawPanel } from "../config";
 import type { AudioSystem } from "../systems/AudioSystem";
+import { getBGM } from "../systems/BGMSystem";
 import type { GameStats } from "../systems/GameStats";
 import { getItemDef, type ItemType } from "../systems/PowerUpSystem";
 import type { WeaponDef } from "../systems/WeaponSystem";
@@ -254,7 +255,7 @@ export class UIScene extends Phaser.Scene {
 	private createWeaponButtons(): void {
 		const btnSize = 56;
 		const gap = 8;
-		const count = 4;
+		const count = 6;
 		const totalWidth = count * btnSize + (count - 1) * gap;
 		const startX = (CONFIG.VIEW_WIDTH - totalWidth) / 2;
 		const btnY = CONFIG.PLAY_HEIGHT + CONFIG.UI_BAR_HEIGHT / 2;
@@ -328,6 +329,7 @@ export class UIScene extends Phaser.Scene {
 			};
 			if (gameScene.audio) {
 				const muted = gameScene.audio.toggleMute();
+				getBGM().setMuted(muted);
 				this.soundIcon.setText(muted ? "🔇" : "🔊");
 			}
 		});
@@ -428,7 +430,7 @@ export class UIScene extends Phaser.Scene {
 
 	private updateWeaponButtons(data: UIData): void {
 		const btnSize = 56;
-		for (let i = 0; i < 4; i++) {
+		for (let i = 0; i < 6; i++) {
 			if (i >= data.weapons.length) {
 				this.weaponBtns[i].setVisible(false);
 				continue;
@@ -943,6 +945,7 @@ export class UIScene extends Phaser.Scene {
 		});
 
 		this.input.once("pointerdown", () => {
+			getBGM().stop();
 			this.scene.stop("GameScene");
 			this.scene.stop("UIScene");
 			this.scene.start("TitleScene");

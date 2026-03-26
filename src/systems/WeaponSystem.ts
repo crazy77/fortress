@@ -63,6 +63,32 @@ const WEAPON_DEFS: WeaponDef[] = [
 		ammo: 2,
 		bounceCount: 2,
 	},
+	{
+		name: "나팔름",
+		icon: "🔶",
+		explosionRadius: 20,
+		directDamage: 15,
+		splashDamage: 8,
+		splashRadius: 40,
+		projectileCount: 1,
+		spreadAngle: 0,
+		ammo: 2,
+		bounceCount: 0,
+		special: "napalm",
+	},
+	{
+		name: "드릴",
+		icon: "⛏️",
+		explosionRadius: 50,
+		directDamage: 55,
+		splashDamage: 20,
+		splashRadius: 60,
+		projectileCount: 1,
+		spreadAngle: 0,
+		ammo: 2,
+		bounceCount: 0,
+		special: "drill",
+	},
 ];
 
 export class WeaponSystem {

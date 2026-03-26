@@ -217,6 +217,7 @@ function genSine(W: number, base: number, amp: number, freqs: number[], weights:
 export class Terrain {
 	readonly alphaMap: TerrainAlphaMap;
 	readonly typeName: string;
+	readonly mapId: string;
 	readonly traits: MapTraits;
 	private canvasTexture: Phaser.Textures.CanvasTexture;
 	private image: Phaser.GameObjects.Image;
@@ -236,6 +237,7 @@ export class Terrain {
 			: MAP_DEFS[Math.floor(Math.random() * MAP_DEFS.length)];
 
 		this.typeName = mapDef.name;
+		this.mapId = mapDef.id;
 		this.traits = mapDef.traits;
 		this.theme = mapDef.theme;
 
