@@ -6,6 +6,7 @@ import { ACHIEVEMENTS, getAchievementManager } from "../systems/AchievementSyste
 import type { AIDifficulty } from "../systems/AIPlayer";
 import { getBGM } from "../systems/BGMSystem";
 import { StatsTracker } from "../systems/GameStats";
+import { ALL_RANKS, getPlayerRank } from "../systems/PlayerRank";
 
 const ERA_COLORS: Record<TankEra, number> = { classic: 0x8d6e63, modern: 0x27ae60, future: 0x8e44ad };
 const ERA_LABELS: Record<TankEra, string> = { classic: "고전", modern: "현대", future: "미래" };
@@ -112,20 +113,58 @@ export class TitleScene extends Phaser.Scene {
 
 		let y = 135;
 
+		// 계급 배지 + 전적
+		const pr = getPlayerRank();
+		const rank = pr.getCurrentRank();
+		const nextRank = pr.getNextRank();
+		const progress = pr.getProgress();
+
+		// 계급 배지 (큰 아이콘 + 이름 + 레벨)
+		const rankBadge = this.add.container(cx, y);
+		const rankIcon = this.add.text(0, 0, rank.icon, { fontSize: "28px" }).setOrigin(0.5);
+		const rankName = this.add.text(40, -4, rank.name, {
+			fontSize: "16px", color: rank.colorHex, fontStyle: "bold",
+		}).setOrigin(0, 0.5);
+		const rankLv = this.add.text(40, 12, `Lv.${rank.tier + 1}`, {
+			fontSize: "11px", color: "#8899bb",
+		}).setOrigin(0, 0.5);
+		rankBadge.add([rankIcon, rankName, rankLv]);
+
+		// XP 진행 바
+		if (nextRank) {
+			const barW = 120;
+			const barH = 6;
+			const barX = -barW / 2 - 70;
+			const barY = 0;
+			const bg = this.add.graphics();
+			bg.fillStyle(0x1a1e2e, 1);
+			bg.fillRoundedRect(barX, barY, barW, barH, 3);
+			bg.fillStyle(rank.color, 0.9);
+			bg.fillRoundedRect(barX, barY, Math.max(barW * progress, barH), barH, 3);
+			bg.lineStyle(1, 0x2a3a5c, 0.5);
+			bg.strokeRoundedRect(barX, barY, barW, barH, 3);
+			rankBadge.add(bg);
+			const xpText = this.add.text(barX + barW + 6, barY, `${pr.getTotalXP()}/${nextRank.xpRequired}`, {
+				fontSize: "9px", color: "#667799",
+			}).setOrigin(0, 0.3);
+			rankBadge.add(xpText);
+		}
+		y += 30;
+
 		// 전적
 		const career = StatsTracker.loadCareer();
 		if (career.totalGames > 0) {
-			this.add.text(cx, y, `전적 ${career.wins}승 ${career.losses}패 | 최고 명중률 ${career.bestAccuracy}%`, {
-				fontSize: "12px", color: Phaser.Display.Color.IntegerToColor(COLORS.GOLD).rgba,
+			this.add.text(cx, y, `전적 ${career.wins}승 ${career.losses}패 | 명중률 ${career.bestAccuracy}%`, {
+				fontSize: "11px", color: Phaser.Display.Color.IntegerToColor(COLORS.GOLD).rgba,
 			}).setOrigin(0.5);
-			y += 24;
+			y += 20;
 		}
 
 		// 상성 힌트
 		this.add.text(cx, y, "상성: 고전→미래  현대→고전  미래→현대", {
-			fontSize: "11px", color: "#667799",
+			fontSize: "10px", color: "#556677",
 		}).setOrigin(0.5);
-		y += 30;
+		y += 26;
 
 		// ═══ 선택 버튼 3개 ═══
 		const btnW = 340;

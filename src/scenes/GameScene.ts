@@ -24,6 +24,7 @@ import { WeaponSystem } from "../systems/WeaponSystem";
 import { WeatherSystem, getWeatherForMap } from "../systems/WeatherSystem";
 import { WindSystem } from "../systems/WindSystem";
 import { KeyboardAimSystem } from "../systems/KeyboardAimSystem";
+import { getPlayerRank } from "../systems/PlayerRank";
 
 export class GameScene extends Phaser.Scene {
 	private terrain!: Terrain;
@@ -187,7 +188,9 @@ export class GameScene extends Phaser.Scene {
 		this.tanks[0].faceToward(t2x);
 		this.tanks[1].faceToward(t1x);
 
-		// AI 대전 시 P2 이름을 "AI"로 변경
+		// 이름에 계급 배지 표시
+		const badge = getPlayerRank().getBadgeText();
+		this.tanks[0].setDisplayName(`${badge} ${this.tankTypes[0].name}`);
 		if (this.aiEnabled) {
 			this.tanks[1].setDisplayName(`AI ${this.tankTypes[1].name}`);
 		}
@@ -1446,6 +1449,23 @@ export class GameScene extends Phaser.Scene {
 			}
 		}
 
+		// 계급 XP 부여
+		const rankUp = getPlayerRank().recordGameResult(
+			winner === 0,
+			this.statsTrackers[0].getAccuracy(),
+		);
+		// 업적 해금 XP 추가
+		if (achievements.length > 0) {
+			getPlayerRank().addXP(achievements.length * 25);
+		}
+		// 계급 승급 팝업
+		if (rankUp && uiScene) {
+			const delay = 500 + achievements.length * 800 + 300;
+			this.time.delayedCall(delay, () => {
+				this.showRankUpPopup(uiScene, rankUp);
+			});
+		}
+
 		if (this.matchManager.isMatchOver()) {
 			const matchWinner = this.matchManager.getMatchWinner() ?? 0;
 			this.statsTrackers[0].saveToCareer(matchWinner === 0);
@@ -1595,6 +1615,87 @@ export class GameScene extends Phaser.Scene {
 			}
 		}
 		return false;
+	}
+
+	/** 계급 승급 팝업 — 화려한 연출 */
+	private showRankUpPopup(scene: Phaser.Scene, rank: import("../systems/PlayerRank").RankDef): void {
+		const cx = 640;
+		const startY = -100;
+		const targetY = 240;
+
+		const container = scene.add.container(cx, startY);
+		container.setDepth(210);
+
+		const w = 360;
+		const h = 100;
+
+		// 배경 패널 (계급 색상 글로우)
+		const bg = scene.add.graphics();
+		bg.fillStyle(0x0a0e17, 0.95);
+		bg.fillRoundedRect(-w / 2, -h / 2, w, h, 16);
+		bg.lineStyle(3, rank.color, 0.9);
+		bg.strokeRoundedRect(-w / 2, -h / 2, w, h, 16);
+		// 외곽 글로우
+		bg.lineStyle(6, rank.color, 0.2);
+		bg.strokeRoundedRect(-w / 2 - 3, -h / 2 - 3, w + 6, h + 6, 19);
+		container.add(bg);
+
+		// 상단 쉬머 바
+		const shimmer = scene.add.graphics();
+		shimmer.fillStyle(rank.color, 0.4);
+		shimmer.fillRoundedRect(-w / 2 + 2, -h / 2 + 2, w - 4, 4, 2);
+		container.add(shimmer);
+
+		// "RANK UP!" 라벨
+		const label = scene.add.text(0, -h / 2 + 18, "RANK UP!", {
+			fontSize: "11px", color: rank.colorHex, fontStyle: "bold", letterSpacing: 3,
+		}).setOrigin(0.5);
+		container.add(label);
+
+		// 큰 아이콘
+		const icon = scene.add.text(-50, 8, rank.icon, { fontSize: "42px" }).setOrigin(0.5);
+		container.add(icon);
+
+		// 계급 이름
+		const name = scene.add.text(20, -2, rank.name, {
+			fontSize: "22px", color: rank.colorHex, fontStyle: "bold",
+		}).setOrigin(0, 0.5);
+		container.add(name);
+
+		// 레벨
+		const lv = scene.add.text(20, 22, `Lv.${rank.tier + 1}`, {
+			fontSize: "13px", color: "#aab2c8",
+		}).setOrigin(0, 0.5);
+		container.add(lv);
+
+		// 아이콘 펄스 애니메이션
+		scene.tweens.add({
+			targets: icon,
+			scaleX: 1.3, scaleY: 1.3,
+			duration: 300,
+			yoyo: true,
+			repeat: 2,
+			ease: "Sine.easeInOut",
+		});
+
+		// 슬라이드인
+		scene.tweens.add({
+			targets: container,
+			y: targetY,
+			duration: 700,
+			ease: "Back.easeOut",
+			onComplete: () => {
+				scene.tweens.add({
+					targets: container,
+					alpha: 0,
+					y: targetY - 40,
+					delay: 3500,
+					duration: 600,
+					ease: "Power2",
+					onComplete: () => container.destroy(),
+				});
+			},
+		});
 	}
 
 	private emitUIUpdate(): void {
