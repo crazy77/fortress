@@ -109,60 +109,127 @@ export class Projectile {
 		const r = this.radius;
 
 		if (this.bouncesRemaining > 0 || this.bounced) {
-			// 바운스탄
+			// 바운스탄 — 빛나는 오렌지 구체 + 별 모양 스파크
+			this.gfx.fillStyle(0xffaa00, 0.3);
+			this.gfx.fillCircle(0, 0, r + 4);
 			this.gfx.fillStyle(0xff8800, 1);
 			this.gfx.fillCircle(0, 0, r + 1);
-			this.gfx.fillStyle(0xffcc00, 0.8);
+			this.gfx.fillStyle(0xffcc00, 0.9);
 			this.gfx.fillCircle(0, 0, r - 1);
+			this.gfx.fillStyle(0xffffff, 0.6);
+			this.gfx.fillCircle(-1, -1, r * 0.3);
 			return;
 		}
 
 		switch (this.tankStyle) {
 			case "cannon":
-				// 클래식 원형 포탄 + 하이라이트
-				this.gfx.fillStyle(0x222222);
+				// 클래식 철 포탄 — 둥근 폭탄 + 도화선 불꽃
+				this.gfx.fillStyle(0x1a1a1a);
+				this.gfx.fillCircle(0, 0, r + 0.5);
+				this.gfx.fillStyle(0x333333);
 				this.gfx.fillCircle(0, 0, r);
-				this.gfx.fillStyle(0x555555, 0.5);
-				this.gfx.fillCircle(-1, -1, r * 0.4);
+				// 금속 광택 하이라이트
+				this.gfx.fillStyle(0x666666, 0.6);
+				this.gfx.fillCircle(-r * 0.3, -r * 0.3, r * 0.4);
+				this.gfx.fillStyle(0x888888, 0.3);
+				this.gfx.fillCircle(-r * 0.2, -r * 0.2, r * 0.2);
+				// 도화선 불꽃 (위쪽)
+				this.gfx.fillStyle(0xff6600, 0.9);
+				this.gfx.fillCircle(0, -r - 1, 2);
+				this.gfx.fillStyle(0xffcc00, 0.7);
+				this.gfx.fillCircle(0.5, -r - 2, 1.5);
 				break;
+
 			case "heavy":
-				// 큰 사각 포탄
+				// 거대한 철갑탄 — 두꺼운 포탄 + 구리 띠
 				this.gfx.fillStyle(0x1a3a1a);
-				this.gfx.fillRect(-r - 1, -r + 1, r * 2 + 2, r * 2 - 2);
-				this.gfx.fillStyle(0x2d6b2d, 0.7);
-				this.gfx.fillRect(-r, -r + 2, r * 2, r);
+				this.gfx.fillRect(-r - 1, -r * 0.7, r * 2 + 2, r * 1.4);
+				// 탄두 (앞쪽 둥근)
+				this.gfx.fillStyle(0x2d5a2d);
+				this.gfx.fillCircle(r, 0, r * 0.7);
+				// 구리 띠 (구동 밴드)
+				this.gfx.fillStyle(0xcd7f32, 0.8);
+				this.gfx.fillRect(-r * 0.3, -r * 0.8, r * 0.4, r * 1.6);
+				// 금속 광택
+				this.gfx.fillStyle(0x4a8a4a, 0.5);
+				this.gfx.fillRect(-r, -r * 0.3, r * 2, r * 0.3);
 				break;
+
 			case "missile":
-				// 가늘고 긴 미사일
+				// 정밀 유도 미사일 — 날렵한 형태 + 추진 불꽃
+				// 본체
 				this.gfx.fillStyle(0x2c3e50);
-				this.gfx.fillRect(-r * 2, -r / 2, r * 4, r);
+				this.gfx.fillRect(-r * 2.5, -r * 0.4, r * 5, r * 0.8);
+				// 탄두 (빨간 뾰족)
 				this.gfx.fillStyle(0xe74c3c);
-				this.gfx.fillTriangle(r * 2, 0, r * 2 - 3, -r, r * 2 - 3, r);
+				this.gfx.fillTriangle(r * 2.5, 0, r * 1.5, -r * 0.5, r * 1.5, r * 0.5);
+				// 날개
+				this.gfx.fillStyle(0x34495e);
+				this.gfx.fillTriangle(-r * 2, 0, -r * 2.5, -r, -r * 1.5, 0);
+				this.gfx.fillTriangle(-r * 2, 0, -r * 2.5, r, -r * 1.5, 0);
+				// 추진 불꽃 (뒤쪽)
+				this.gfx.fillStyle(0xff6600, 0.8);
+				this.gfx.fillTriangle(-r * 2.5, 0, -r * 3.5, -r * 0.3, -r * 3.5, r * 0.3);
+				this.gfx.fillStyle(0xffcc00, 0.6);
+				this.gfx.fillTriangle(-r * 2.5, 0, -r * 3, -r * 0.15, -r * 3, r * 0.15);
 				break;
+
 			case "laser":
-				// 빛나는 에너지 구체
-				this.gfx.fillStyle(0x00e5ff, 0.4);
-				this.gfx.fillCircle(0, 0, r + 3);
-				this.gfx.fillStyle(0x00bcd4, 0.8);
+				// 에너지 구체 — 다중 글로우 레이어 + 렌즈 플레어
+				this.gfx.fillStyle(0x00e5ff, 0.12);
+				this.gfx.fillCircle(0, 0, r + 8);
+				this.gfx.fillStyle(0x00e5ff, 0.2);
+				this.gfx.fillCircle(0, 0, r + 5);
+				this.gfx.fillStyle(0x00bcd4, 0.5);
+				this.gfx.fillCircle(0, 0, r + 2);
+				this.gfx.fillStyle(0x26c6da, 0.9);
 				this.gfx.fillCircle(0, 0, r);
-				this.gfx.fillStyle(0xffffff, 0.6);
-				this.gfx.fillCircle(-1, -1, r * 0.4);
+				// 중심 백색 코어
+				this.gfx.fillStyle(0xffffff, 0.8);
+				this.gfx.fillCircle(0, 0, r * 0.4);
+				// 렌즈 플레어 (십자)
+				this.gfx.fillStyle(0xffffff, 0.3);
+				this.gfx.fillRect(-r - 4, -0.5, r * 2 + 8, 1);
+				this.gfx.fillRect(-0.5, -r - 4, 1, r * 2 + 8);
 				break;
+
 			case "hover":
-				// 삼각 플라즈마 탄
-				this.gfx.fillStyle(0x9b59b6);
+				// 플라즈마 에너지볼 — 회전하는 삼각 + 글로우
+				this.gfx.fillStyle(0x9b59b6, 0.2);
+				this.gfx.fillCircle(0, 0, r + 4);
+				this.gfx.fillStyle(0x9b59b6, 0.8);
 				this.gfx.fillTriangle(r + 2, 0, -r, -r, -r, r);
-				this.gfx.fillStyle(0xc39bd3, 0.6);
+				this.gfx.fillStyle(0xc39bd3, 0.7);
 				this.gfx.fillTriangle(r, 0, -r + 2, -r + 2, -r + 2, r - 2);
+				// 중심 핵
+				this.gfx.fillStyle(0xe1bee7, 0.9);
+				this.gfx.fillCircle(0, 0, r * 0.35);
+				// 에너지 꼬리
+				this.gfx.fillStyle(0xba68c8, 0.4);
+				this.gfx.fillCircle(-r - 1, 0, r * 0.5);
+				this.gfx.fillStyle(0xce93d8, 0.2);
+				this.gfx.fillCircle(-r - 3, 0, r * 0.3);
 				break;
+
 			case "catapult":
-				// 거대한 바위
+				// 거대한 바위 — 울퉁불퉁한 표면 + 이끼
+				this.gfx.fillStyle(0x5d4037);
+				this.gfx.fillCircle(0, 0, r + 2);
 				this.gfx.fillStyle(0x6d4c41);
 				this.gfx.fillCircle(0, 0, r + 1);
-				this.gfx.fillStyle(0x8d6e63, 0.7);
+				// 바위 표면 디테일
+				this.gfx.fillStyle(0x8d6e63, 0.8);
 				this.gfx.fillCircle(-1, -1, r - 1);
-				this.gfx.fillStyle(0x5d4037, 0.5);
-				this.gfx.fillCircle(2, 1, r * 0.3);
+				// 울퉁불퉁 (작은 돌기)
+				this.gfx.fillStyle(0x4e342e, 0.6);
+				this.gfx.fillCircle(r * 0.5, r * 0.3, r * 0.3);
+				this.gfx.fillCircle(-r * 0.4, r * 0.5, r * 0.25);
+				// 이끼 (녹색 점)
+				this.gfx.fillStyle(0x558b2f, 0.4);
+				this.gfx.fillCircle(-r * 0.5, -r * 0.2, r * 0.2);
+				// 하이라이트
+				this.gfx.fillStyle(0xa1887f, 0.5);
+				this.gfx.fillCircle(-r * 0.3, -r * 0.4, r * 0.25);
 				break;
 		}
 	}
@@ -172,23 +239,27 @@ export class Projectile {
 			case "laser": return 0x80deea;
 			case "hover": return 0xce93d8;
 			case "missile": return 0xff8a65;
-			default: return 0x999999;
+			case "heavy": return 0x666666;
+			case "catapult": return 0x8d6e63;
+			default: return 0x888888;
 		}
 	}
 
 	update(wind: number): void {
 		if (!this.alive) return;
 
-		// 연기 꼬리 파티클 추가 (현재 위치에 생성)
+		// 연기 꼬리 파티클 추가 (스타일별 특성)
+		const trailAlpha = this.tankStyle === "laser" ? 0.7 : this.tankStyle === "hover" ? 0.6 : 0.45;
+		const trailSize = this.tankStyle === "laser" ? this.radius * 0.8 : this.radius * 0.6 + Math.random() * 1.5;
 		this.smokeTrail.push({
-			x: this.x,
-			y: this.y,
-			alpha: 0.5,
-			size: this.radius * 0.6 + Math.random() * 1.5,
+			x: this.x + (Math.random() - 0.5) * 2,
+			y: this.y + (Math.random() - 0.5) * 2,
+			alpha: trailAlpha,
+			size: trailSize,
 		});
 
-		// 파티클 감쇠 + 제거 (최대 12개 유지)
-		const maxParticles = 12;
+		// 파티클 감쇠 + 제거 (더 긴 꼬리)
+		const maxParticles = 16;
 		for (const p of this.smokeTrail) {
 			p.alpha -= 0.06;
 			p.size *= 1.03; // 점점 커지며 흩어짐

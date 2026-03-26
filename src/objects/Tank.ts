@@ -368,28 +368,40 @@ export class Tank {
 		};
 	}
 
-	// ─── 캐논 (기본) ───
+	// ─── 캐논 (듬직한 병사 / Reliable Soldier) ───
 	private drawCannonBody(mainColor: number, darkColor: number): void {
 		const hw = this.typeDef.width / 2;
 		const hh = this.typeDef.height;
 		const f = this.facing;
 
-		// 무한궤도
+		// Rounded track covers
 		const trackH = 8;
 		const trackW = hw + 4;
-		this.drawTrack(trackW, trackH);
+		this.drawTrack(trackW, trackH, mainColor);
 
-		// 차체
-		const bodyBottom = trackH;
-		const bodyTop = hh - 4;
-		const frontInset = f * 3;
-
+		// Track fender (rounded top cover)
 		this.body.fillStyle(darkColor);
+		const fL = this.t(-trackW + 2, trackH + 1);
+		const fR = this.t(trackW - 2, trackH + 1);
+		const fRT = this.t(trackW - 4, trackH + 3);
+		const fLT = this.t(-trackW + 4, trackH + 3);
 		this.body.beginPath();
-		const bbl = this.t(-hw + 2, bodyBottom);
-		const bbr = this.t(hw - 2, bodyBottom);
-		const btr = this.t(hw - 4 + frontInset, bodyTop);
-		const btl = this.t(-hw + 4 - frontInset, bodyTop);
+		this.body.moveTo(fL.x, fL.y);
+		this.body.lineTo(fR.x, fR.y);
+		this.body.lineTo(fRT.x, fRT.y);
+		this.body.lineTo(fLT.x, fLT.y);
+		this.body.closePath();
+		this.body.fillPath();
+
+		// Sturdy rounded body (warm red base)
+		const bodyBottom = trackH + 2;
+		const bodyTop = hh - 3;
+		this.body.fillStyle(darkColor);
+		const bbl = this.t(-hw + 1, bodyBottom);
+		const bbr = this.t(hw - 1, bodyBottom);
+		const btr = this.t(hw - 3 + f * 2, bodyTop);
+		const btl = this.t(-hw + 3 - f * 2, bodyTop);
+		this.body.beginPath();
 		this.body.moveTo(bbl.x, bbl.y);
 		this.body.lineTo(bbr.x, bbr.y);
 		this.body.lineTo(btr.x, btr.y);
@@ -397,12 +409,12 @@ export class Tank {
 		this.body.closePath();
 		this.body.fillPath();
 
-		// 본체 하이라이트
+		// Body highlight panel
 		this.body.fillStyle(mainColor);
-		const hbl = this.t(-hw + 4, bodyBottom + 3);
-		const hbr = this.t(hw - 4, bodyBottom + 3);
-		const htr = this.t(hw - 6 + frontInset, bodyTop);
-		const htl = this.t(-hw + 6 - frontInset, bodyTop);
+		const hbl = this.t(-hw + 3, bodyBottom + 2);
+		const hbr = this.t(hw - 3, bodyBottom + 2);
+		const htr = this.t(hw - 5 + f * 2, bodyTop);
+		const htl = this.t(-hw + 5 - f * 2, bodyTop);
 		this.body.beginPath();
 		this.body.moveTo(hbl.x, hbl.y);
 		this.body.lineTo(hbr.x, hbr.y);
@@ -411,85 +423,197 @@ export class Tank {
 		this.body.closePath();
 		this.body.fillPath();
 
-		// 포탑 (둥근)
-		const turretCenter = this.t(f * this.typeDef.turretOffset, hh);
-		this.body.fillStyle(mainColor);
-		this.body.fillCircle(
-			turretCenter.x,
-			turretCenter.y,
-			this.typeDef.turretRadius,
-		);
-		const highlight = this.t(f * this.typeDef.turretOffset - f * 2, hh + 3);
-		this.body.fillStyle(darkColor);
-		this.body.fillCircle(highlight.x, highlight.y, 4);
+		// Golden accent stripe along the side
+		this.body.fillStyle(0xdaa520, 0.7);
+		const sL = this.t(-hw + 4, bodyBottom + 5);
+		const sR = this.t(hw - 4, bodyBottom + 5);
+		const sRT = this.t(hw - 4, bodyBottom + 7);
+		const sLT = this.t(-hw + 4, bodyBottom + 7);
+		this.body.beginPath();
+		this.body.moveTo(sL.x, sL.y);
+		this.body.lineTo(sR.x, sR.y);
+		this.body.lineTo(sRT.x, sRT.y);
+		this.body.lineTo(sLT.x, sLT.y);
+		this.body.closePath();
+		this.body.fillPath();
 
-		// 디테일
-		const lightPos = this.t(f * (hw - 3), trackH + 5);
-		this.body.fillStyle(0xf1c40f);
-		this.body.fillCircle(lightPos.x, lightPos.y, 2.5);
+		// Cute headlight "eyes" on front (one slightly larger for charm)
+		const eye1 = this.t(f * (hw - 4), bodyBottom + 4);
+		const eye2 = this.t(f * (hw - 4), bodyBottom + 9);
+		this.body.fillStyle(0xf1c40f, 0.9);
+		this.body.fillCircle(eye1.x, eye1.y, 3);
+		this.body.fillCircle(eye2.x, eye2.y, 3.5);
+		// Eye gleam (white dot)
+		this.body.fillStyle(0xffffff, 0.8);
+		this.body.fillCircle(eye1.x, eye1.y, 1.2);
+		this.body.fillCircle(eye2.x, eye2.y, 1.4);
+
+		// Round friendly turret
+		const tc = this.t(f * this.typeDef.turretOffset, hh);
+		this.body.fillStyle(darkColor);
+		this.body.fillCircle(tc.x, tc.y, this.typeDef.turretRadius + 1);
+		this.body.fillStyle(mainColor);
+		this.body.fillCircle(tc.x, tc.y, this.typeDef.turretRadius);
+		// Gleam highlight on turret
+		const gleam = this.t(f * this.typeDef.turretOffset - f * 2, hh + 2);
+		this.body.fillStyle(0xffffff, 0.35);
+		this.body.fillCircle(gleam.x, gleam.y, 3);
+		this.body.fillStyle(0xffffff, 0.6);
+		this.body.fillCircle(gleam.x, gleam.y, 1.5);
+
+		// Small antenna/flag on top of turret
+		const antBase = this.t(f * this.typeDef.turretOffset, hh + this.typeDef.turretRadius);
+		const antTip = this.t(f * this.typeDef.turretOffset, hh + this.typeDef.turretRadius + 7);
+		this.body.lineStyle(1, 0x555555);
+		this.body.beginPath();
+		this.body.moveTo(antBase.x, antBase.y);
+		this.body.lineTo(antTip.x, antTip.y);
+		this.body.strokePath();
+		// Tiny flag
+		const flagP1 = this.t(f * this.typeDef.turretOffset, hh + this.typeDef.turretRadius + 7);
+		const flagP2 = this.t(f * this.typeDef.turretOffset + f * 4, hh + this.typeDef.turretRadius + 5);
+		const flagP3 = this.t(f * this.typeDef.turretOffset, hh + this.typeDef.turretRadius + 4);
+		this.body.fillStyle(0xe74c3c);
+		this.body.beginPath();
+		this.body.moveTo(flagP1.x, flagP1.y);
+		this.body.lineTo(flagP2.x, flagP2.y);
+		this.body.lineTo(flagP3.x, flagP3.y);
+		this.body.closePath();
+		this.body.fillPath();
+
+		// Exhaust pipe on back
 		const exhaustPos = this.t(-f * (hw + 1), trackH + 4);
 		this.body.fillStyle(0x555555);
-		this.body.fillCircle(exhaustPos.x, exhaustPos.y, 2);
+		this.body.fillCircle(exhaustPos.x, exhaustPos.y, 2.5);
+		this.body.fillStyle(0x333333);
+		this.body.fillCircle(exhaustPos.x, exhaustPos.y, 1.5);
 	}
 
-	// ─── 호버 (미래) ───
+	// ─── 호버 (날렵한 요정 / Swift Fairy) ───
 	private drawHoverBody(mainColor: number, darkColor: number): void {
 		const hw = this.typeDef.width / 2;
 		const hh = this.typeDef.height;
 		const f = this.facing;
 
-		// 호버 패드 (바퀴 대신 빛나는 패드)
-		const padH = 5;
-		this.body.fillStyle(0x4fc3f7, 0.6);
-		for (let i = -1; i <= 1; i++) {
-			const padCenter = this.t(i * (hw * 0.6), padH * 0.5);
-			this.body.fillEllipse(padCenter.x, padCenter.y, 10, 4);
-		}
-		// 패드 글로우
-		this.body.fillStyle(0x81d4fa, 0.3);
-		for (let i = -1; i <= 1; i++) {
-			const padCenter = this.t(i * (hw * 0.6), 0);
-			this.body.fillEllipse(padCenter.x, padCenter.y, 14, 6);
-		}
+		// Prominent hover glow: Multiple layers underneath (4+ ellipses, decreasing alpha)
+		const glowY = 1;
+		this.body.fillStyle(0x00bcd4, 0.08);
+		const g0 = this.t(0, glowY - 3);
+		this.body.fillEllipse(g0.x, g0.y, hw * 2.6, 12);
+		this.body.fillStyle(0x00e5ff, 0.12);
+		const g1 = this.t(0, glowY - 1);
+		this.body.fillEllipse(g1.x, g1.y, hw * 2.2, 9);
+		this.body.fillStyle(0x4fc3f7, 0.2);
+		const g2 = this.t(0, glowY);
+		this.body.fillEllipse(g2.x, g2.y, hw * 1.8, 7);
+		this.body.fillStyle(0x81d4fa, 0.35);
+		const g3 = this.t(0, glowY + 1);
+		this.body.fillEllipse(g3.x, g3.y, hw * 1.4, 5);
+		this.body.fillStyle(0xb3e5fc, 0.5);
+		const g4 = this.t(0, glowY + 1.5);
+		this.body.fillEllipse(g4.x, g4.y, hw * 0.9, 3);
 
-		// 슬릭한 납작 차체
-		const bodyBottom = padH;
-		const bodyTop = hh - 6;
+		// Sleek curved aerodynamic body (purple)
+		const bodyBottom = 4;
+		const bodyTop = hh - 5;
+		const bodyMid = (bodyBottom + bodyTop) / 2;
+
+		// Outer body - swept shape
 		this.body.fillStyle(darkColor);
-		const bl = this.t(-hw, bodyBottom);
-		const br = this.t(hw, bodyBottom);
-		const tr = this.t(hw - 6 + f * 6, bodyTop);
-		const tl = this.t(-hw + 6 - f * 6, bodyTop);
+		const bl = this.t(-hw + 2, bodyBottom);
+		const bml = this.t(-hw - 1, bodyMid);
+		const tl = this.t(-hw + 6 - f * 5, bodyTop);
+		const tr = this.t(hw - 6 + f * 5, bodyTop);
+		const bmr = this.t(hw + 1, bodyMid);
+		const br = this.t(hw - 2, bodyBottom);
 		this.body.beginPath();
 		this.body.moveTo(bl.x, bl.y);
-		this.body.lineTo(br.x, br.y);
-		this.body.lineTo(tr.x, tr.y);
+		this.body.lineTo(bml.x, bml.y);
 		this.body.lineTo(tl.x, tl.y);
+		this.body.lineTo(tr.x, tr.y);
+		this.body.lineTo(bmr.x, bmr.y);
+		this.body.lineTo(br.x, br.y);
 		this.body.closePath();
 		this.body.fillPath();
 
-		// 차체 하이라이트 (더 날렵한 형태)
+		// Inner body highlight
 		this.body.fillStyle(mainColor);
-		const hbl = this.t(-hw + 3, bodyBottom + 2);
-		const hbr = this.t(hw - 3, bodyBottom + 2);
-		const htr = this.t(hw - 8 + f * 6, bodyTop);
-		const htl = this.t(-hw + 8 - f * 6, bodyTop);
+		const hbl = this.t(-hw + 4, bodyBottom + 2);
+		const hbml = this.t(-hw + 1, bodyMid);
+		const htl = this.t(-hw + 8 - f * 5, bodyTop);
+		const htr = this.t(hw - 8 + f * 5, bodyTop);
+		const hbmr = this.t(hw - 1, bodyMid);
+		const hbr = this.t(hw - 4, bodyBottom + 2);
 		this.body.beginPath();
 		this.body.moveTo(hbl.x, hbl.y);
-		this.body.lineTo(hbr.x, hbr.y);
-		this.body.lineTo(htr.x, htr.y);
+		this.body.lineTo(hbml.x, hbml.y);
 		this.body.lineTo(htl.x, htl.y);
+		this.body.lineTo(htr.x, htr.y);
+		this.body.lineTo(hbmr.x, hbmr.y);
+		this.body.lineTo(hbr.x, hbr.y);
 		this.body.closePath();
 		this.body.fillPath();
 
-		// 작은 뾰족한 포탑
+		// Pink energy accent lines
+		this.body.lineStyle(1, 0xff69b4, 0.6);
+		const aL = this.t(-hw + 5, bodyBottom + 4);
+		const aR = this.t(hw - 5, bodyBottom + 4);
+		this.body.beginPath();
+		this.body.moveTo(aL.x, aL.y);
+		this.body.lineTo(aR.x, aR.y);
+		this.body.strokePath();
+
+		// Front visor line (thin cyan stripe like a visor/eye)
+		this.body.lineStyle(1.5, 0x00ffff, 0.8);
+		const vL = this.t(f * (hw - 8), bodyMid + 1);
+		const vR = this.t(f * (hw + 0), bodyMid + 1);
+		this.body.beginPath();
+		this.body.moveTo(vL.x, vL.y);
+		this.body.lineTo(vR.x, vR.y);
+		this.body.strokePath();
+		// Visor glow
+		this.body.fillStyle(0x00ffff, 0.2);
+		const visorC = this.t(f * (hw - 4), bodyMid + 1);
+		this.body.fillEllipse(visorC.x, visorC.y, 10, 4);
+
+		// Tiny wing-like fins on the sides
+		for (const side of [-1, 1]) {
+			const finBase = this.t(side * (hw + 1), bodyMid + 2);
+			const finTip = this.t(side * (hw + 5), bodyMid + 5);
+			const finBack = this.t(side * (hw + 1), bodyMid - 1);
+			this.body.fillStyle(darkColor, 0.8);
+			this.body.beginPath();
+			this.body.moveTo(finBase.x, finBase.y);
+			this.body.lineTo(finTip.x, finTip.y);
+			this.body.lineTo(finBack.x, finBack.y);
+			this.body.closePath();
+			this.body.fillPath();
+		}
+
+		// Sleek turret
 		const tc = this.t(f * this.typeDef.turretOffset, hh);
+		this.body.fillStyle(darkColor);
+		this.body.fillCircle(tc.x, tc.y, this.typeDef.turretRadius + 1);
 		this.body.fillStyle(mainColor);
 		this.body.fillCircle(tc.x, tc.y, this.typeDef.turretRadius);
-		// 포탑 위 하이라이트 점
-		const hl = this.t(f * this.typeDef.turretOffset, hh + 2);
-		this.body.fillStyle(darkColor);
-		this.body.fillCircle(hl.x, hl.y, 3);
+
+		// Energy antenna on turret with glow dot
+		const antBase = this.t(f * this.typeDef.turretOffset, hh + this.typeDef.turretRadius - 1);
+		const antTip = this.t(f * this.typeDef.turretOffset, hh + this.typeDef.turretRadius + 5);
+		this.body.lineStyle(1, 0xce93d8);
+		this.body.beginPath();
+		this.body.moveTo(antBase.x, antBase.y);
+		this.body.lineTo(antTip.x, antTip.y);
+		this.body.strokePath();
+		this.body.fillStyle(0x00ffff, 0.8);
+		this.body.fillCircle(antTip.x, antTip.y, 2);
+		this.body.fillStyle(0x00ffff, 0.3);
+		this.body.fillCircle(antTip.x, antTip.y, 4);
+
+		// Turret highlight
+		const hl = this.t(f * this.typeDef.turretOffset - f * 1, hh + 2);
+		this.body.fillStyle(0xffffff, 0.25);
+		this.body.fillCircle(hl.x, hl.y, 2.5);
 	}
 
 	// ─── 중전차 (현대) ───
@@ -791,7 +915,7 @@ export class Tank {
 	}
 
 	/** 공통 무한궤도 그리기 */
-	private drawTrack(trackW: number, trackH: number): void {
+	private drawTrack(trackW: number, trackH: number, _fenderColor?: number): void {
 		const tbl = this.t(-trackW, 0);
 		const tbr = this.t(trackW, 0);
 		const ttr = this.t(trackW, trackH);
