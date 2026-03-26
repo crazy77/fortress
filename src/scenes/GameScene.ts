@@ -110,6 +110,8 @@ export class GameScene extends Phaser.Scene {
 	private movedThisTurn = false;
 	/** 라운드 승리 업그레이드 (플레이어별 누적 승리 수에 따른 보너스) */
 	private roundUpgrades: [number, number] = [0, 0];
+	/** 화염탄 버프 활성 (이번 발사에 적용) */
+	private fireUpActive = false;
 
 	constructor() {
 		super("GameScene");
@@ -146,6 +148,8 @@ export class GameScene extends Phaser.Scene {
 		this.activeBuffs = { powerUp: false, damageUp: false, doubleShot: false, fireUp: false, doubleTurn: false };
 		this.shields = [0, 0];
 		this.debuffs = [{ angleLock: 0, moveLock: 0 }, { angleLock: 0, moveLock: 0 }];
+		this.comboCount = [0, 0];
+		this.movedThisTurn = false;
 		this.selectedMapId = data?.mapId;
 
 		// 라운드마다 시간대 변경
@@ -820,12 +824,16 @@ export class GameScene extends Phaser.Scene {
 				// 랜덤 안전 위치로 텔레포트
 				const margin = CONFIG.TANK_WIDTH * 2;
 				let newX = margin + Math.random() * (CONFIG.WORLD_WIDTH - margin * 2);
-				let attempts = 0;
-				while (attempts < 20) {
+				let foundSafe = false;
+				for (let attempts = 0; attempts < 30; attempts++) {
 					const surfY = this.terrain.getHeightAt(newX);
-					if (surfY < CONFIG.PLAY_HEIGHT - 10) break;
+					if (surfY < CONFIG.PLAY_HEIGHT - 20) { foundSafe = true; break; }
 					newX = margin + Math.random() * (CONFIG.WORLD_WIDTH - margin * 2);
-					attempts++;
+				}
+				if (!foundSafe) {
+					// 안전한 위치 없음 — 텔레포트 취소, 아이템 반환
+					this.itemManager.inventories[player].add("teleport");
+					break;
 				}
 				// 텔레포트 이펙트
 				const oldX = this.tanks[player].x;
@@ -1001,8 +1009,8 @@ export class GameScene extends Phaser.Scene {
 		}
 		const isDoubleShot = this.activeBuffs.doubleShot;
 		if (isDoubleShot) this.activeBuffs.doubleShot = false;
-		const isFireUp = this.activeBuffs.fireUp;
-		if (isFireUp) this.activeBuffs.fireUp = false;
+		this.fireUpActive = this.activeBuffs.fireUp;
+		if (this.fireUpActive) this.activeBuffs.fireUp = false;
 
 		this.projectiles = [];
 		this.totalDamageThisSalvo = 0;
@@ -1132,13 +1140,26 @@ export class GameScene extends Phaser.Scene {
 		} else if (proj.weapon.special === "dirtball") {
 			// 흙덩이: 지형 추가 (파괴 대신)
 			this.terrain.addDirt(x, y, explosionRadius);
-			// 탱크가 묻히면 이동 불가 + 소량 데미지
+			// 탱크가 묻히면 위로 밀어내기 + 소량 데미지
 			for (const tank of this.tanks) {
 				if (this.terrain.isSolid(tank.x, tank.y - 5)) {
 					tank.takeDamage(5);
+					// 지형 위로 밀어내기 (매몰 방지)
+					let pushY = tank.y;
+					while (pushY > 0 && this.terrain.isSolid(tank.x, pushY)) {
+						pushY--;
+					}
+					tank.x = tank.x; // keep x
+					tank.y = pushY;
 					tank.settleOnTerrain();
 				}
 			}
+		}
+
+		// 화염탄 버프: 착탄 시 미니 나팔름 (40px 범위)
+		if (this.fireUpActive) {
+			this.fireUpActive = false;
+			this.handleNapalmEffect(x, y, currentPlayer);
 		}
 
 		// 향상된 폭발 이펙트 — 3단계 파티클 + 플래시
@@ -1511,12 +1532,8 @@ export class GameScene extends Phaser.Scene {
 			});
 
 			this.time.delayedCall(2500, () => {
-				// 리소스 정리 (메모리 누수 방지)
-				for (const tank of this.tanks) tank.cleanup();
+				// SHUTDOWN 이벤트 핸들러가 정리하므로 여기서 중복 정리하지 않음
 				this.itemManager.destroyAll();
-				if (this.weatherSystem) this.weatherSystem.destroy();
-				if (this.waterEffect) this.waterEffect.destroy();
-				if (this.confettiEffect) this.confettiEffect.destroy();
 				this.scene.restart({
 					aiEnabled: this.aiEnabled,
 					aiDifficulty: this.aiDifficulty,

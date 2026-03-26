@@ -238,8 +238,8 @@ export function slowMotionKillCam(scene: Phaser.Scene, x: number, y: number, cal
 	// Screen flash
 	screenFlash(scene, 0xffffff, 300, 0.5);
 
-	// Restore after delay
-	scene.time.delayedCall(1500 / 0.3, () => {
+	// Restore after ~1.5초 실시간 대기 (timeScale=0.3이므로 450 game-ms = 1500 real-ms)
+	scene.time.delayedCall(450, () => {
 		scene.time.timeScale = 1;
 		scene.cameras.main.zoomTo(1, 600, "Sine.easeInOut");
 		scene.time.delayedCall(600, callback);
