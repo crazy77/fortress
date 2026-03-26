@@ -1,0 +1,22 @@
+{
+	"name": "fortress",
+	"version": "1.0.0",
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "tsc && vite build",
+		"preview": "vite preview",
+		"check": "biome check --write .",
+		"lint": "biome lint .",
+		"type-check": "tsc -noEmit",
+		"format": "biome format --write ."
+	},
+	"dependencies": {
+		"phaser": "4.0.0-rc.6"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.8",
+		"typescript": "^5.9.3",
+		"vite": "^8.0.1"
+	}
+}
