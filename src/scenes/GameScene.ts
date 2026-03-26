@@ -1063,6 +1063,7 @@ export class GameScene extends Phaser.Scene {
 		this.weaponSystem.consumeAmmo(player);
 		this.turnManager.setState(TurnState.FLIGHT);
 		this.audio.playFire(tankType.style);
+		tank.playFireAnimation();
 		vibrate(30);
 
 		this.statsTrackers[player].recordShot();

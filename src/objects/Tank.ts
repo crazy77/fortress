@@ -26,6 +26,14 @@ export class Tank {
 	/** 턴 표시 마커 (▼ 화살표) */
 	private turnMarker: Phaser.GameObjects.Text;
 
+	// ─── 애니메이션 상태 ───
+	private idleTween: Phaser.Tweens.Tween | null = null;
+	private isIdleAnimating = false;
+	/** 머즐 플래시 그래픽 */
+	private muzzleFlashGfx: Phaser.GameObjects.Graphics;
+	/** 애니메이션용 컨테이너 — body/barrel의 부모 역할 (흔들림/반동 적용) */
+	private animContainer: Phaser.GameObjects.Container;
+
 	constructor(
 		scene: Phaser.Scene,
 		x: number,
@@ -45,6 +53,15 @@ export class Tank {
 		this.barrel.setDepth(3);
 		this.hpBarGfx = scene.add.graphics();
 		this.hpBarGfx.setDepth(4);
+
+		// 머즐 플래시
+		this.muzzleFlashGfx = scene.add.graphics();
+		this.muzzleFlashGfx.setDepth(5);
+		this.muzzleFlashGfx.setVisible(false);
+
+		// 애니메이션 컨테이너 (body/barrel 래핑하지 않고 오프셋으로 사용)
+		this.animContainer = scene.add.container(0, 0);
+		this.animContainer.setDepth(0);
 
 		// 이름 라벨 (HP 바 위)
 		const pLabel = playerIndex === 0 ? "P1" : "P2";
@@ -148,6 +165,7 @@ export class Tank {
 		this.health = Math.max(0, this.health - amount);
 		this.flashWhite();
 		this.showDamagePopup(amount);
+		this.playHitAnimation(amount);
 		if (this.isDead() && !this.destroyed) {
 			this.playDestroyAnimation();
 		}
@@ -218,6 +236,281 @@ export class Tank {
 			duration: 800,
 			ease: "Power2",
 			onComplete: () => txt.destroy(),
+		});
+	}
+
+	// ─── 캐릭터 애니메이션 ───
+
+	/** 대기 애니메이션 — 활성 턴일 때 미세한 숨쉬기 + 탱크별 고유 동작 */
+	startIdleAnimation(): void {
+		if (this.isIdleAnimating || this.destroyed) return;
+		this.isIdleAnimating = true;
+
+		// 공통: 미세한 바운스 (숨쉬기)
+		this.idleTween = this.scene.tweens.add({
+			targets: this.body,
+			y: -2,
+			duration: 1200,
+			yoyo: true,
+			repeat: -1,
+			ease: "Sine.easeInOut",
+		});
+
+		// 포신도 같이 숨쉬기
+		this.scene.tweens.add({
+			targets: this.barrel,
+			y: -2,
+			duration: 1200,
+			yoyo: true,
+			repeat: -1,
+			ease: "Sine.easeInOut",
+		});
+
+		// 탱크별 고유 대기 동작
+		switch (this.typeDef.style) {
+			case "hover":
+				// 호버: 좌우 미세 흔들림 (떠있는 느낌)
+				this.scene.tweens.add({
+					targets: this.body,
+					x: 1.5,
+					duration: 800,
+					yoyo: true,
+					repeat: -1,
+					ease: "Sine.easeInOut",
+				});
+				break;
+			case "heavy":
+				// 중전차: 느린 엔진 진동
+				this.scene.tweens.add({
+					targets: this.body,
+					x: 0.5,
+					duration: 200,
+					yoyo: true,
+					repeat: -1,
+					ease: "Sine.easeInOut",
+				});
+				break;
+			case "laser":
+				// 레이저: 포신 끝 글로우 맥동
+				this.scene.tweens.add({
+					targets: this.barrel,
+					alpha: 0.85,
+					duration: 1000,
+					yoyo: true,
+					repeat: -1,
+					ease: "Sine.easeInOut",
+				});
+				break;
+			case "catapult":
+				// 카타펄트: 미세한 흔들림 (바람에 흔들리는 나무)
+				this.scene.tweens.add({
+					targets: this.barrel,
+					x: 1,
+					duration: 1500,
+					yoyo: true,
+					repeat: -1,
+					ease: "Sine.easeInOut",
+				});
+				break;
+		}
+	}
+
+	/** 대기 애니메이션 중지 */
+	stopIdleAnimation(): void {
+		if (!this.isIdleAnimating) return;
+		this.isIdleAnimating = false;
+
+		this.scene.tweens.killTweensOf(this.body);
+		this.scene.tweens.killTweensOf(this.barrel);
+		// 위치 리셋
+		this.body.setPosition(0, 0);
+		this.body.setAlpha(1);
+		this.barrel.setPosition(0, 0);
+		this.barrel.setAlpha(1);
+
+		if (this.idleTween) {
+			this.idleTween.destroy();
+			this.idleTween = null;
+		}
+	}
+
+	/** 발사 반동 애니메이션 — 포신 후퇴 + 차체 흔들림 + 머즐 플래시 */
+	playFireAnimation(): void {
+		if (this.destroyed) return;
+		this.stopIdleAnimation();
+
+		const muzzle = this.getMuzzlePosition();
+		const worldAngleRad = Phaser.Math.DegToRad(this.getWorldAngle());
+
+		// 1. 머즐 플래시 (포구 불꽃)
+		this.muzzleFlashGfx.clear();
+		this.muzzleFlashGfx.setVisible(true);
+		this.muzzleFlashGfx.setPosition(muzzle.x, muzzle.y);
+
+		// 스타일별 머즐 플래시
+		switch (this.typeDef.style) {
+			case "laser":
+				// 레이저: 원형 에너지 버스트
+				this.muzzleFlashGfx.fillStyle(0x00ffff, 0.6);
+				this.muzzleFlashGfx.fillCircle(0, 0, 12);
+				this.muzzleFlashGfx.fillStyle(0xffffff, 0.8);
+				this.muzzleFlashGfx.fillCircle(0, 0, 5);
+				break;
+			case "hover":
+				// 호버: 보라 에너지 링
+				this.muzzleFlashGfx.fillStyle(0xce93d8, 0.5);
+				this.muzzleFlashGfx.fillCircle(0, 0, 10);
+				this.muzzleFlashGfx.lineStyle(2, 0xe1bee7, 0.7);
+				this.muzzleFlashGfx.strokeCircle(0, 0, 8);
+				break;
+			case "heavy":
+				// 중전차: 거대한 주황 폭발
+				this.muzzleFlashGfx.fillStyle(0xff6600, 0.7);
+				this.muzzleFlashGfx.fillCircle(0, 0, 16);
+				this.muzzleFlashGfx.fillStyle(0xffcc00, 0.9);
+				this.muzzleFlashGfx.fillCircle(0, 0, 8);
+				this.muzzleFlashGfx.fillStyle(0xffffff, 0.6);
+				this.muzzleFlashGfx.fillCircle(0, 0, 3);
+				break;
+			case "catapult":
+				// 카타펄트: 먼지 구름
+				this.muzzleFlashGfx.fillStyle(0x8d6e63, 0.5);
+				this.muzzleFlashGfx.fillCircle(0, 0, 10);
+				this.muzzleFlashGfx.fillCircle(3, -2, 6);
+				this.muzzleFlashGfx.fillCircle(-4, 1, 5);
+				break;
+			default:
+				// 캐논/미사일: 전통 주황 불꽃
+				this.muzzleFlashGfx.fillStyle(0xff8800, 0.7);
+				this.muzzleFlashGfx.fillCircle(0, 0, 10);
+				this.muzzleFlashGfx.fillStyle(0xffdd44, 0.9);
+				this.muzzleFlashGfx.fillCircle(0, 0, 5);
+				break;
+		}
+
+		// 머즐 플래시 페이드아웃
+		this.scene.tweens.add({
+			targets: this.muzzleFlashGfx,
+			alpha: 0,
+			scaleX: 1.8,
+			scaleY: 1.8,
+			duration: 150,
+			ease: "Power2",
+			onComplete: () => {
+				this.muzzleFlashGfx.setVisible(false);
+				this.muzzleFlashGfx.setAlpha(1);
+				this.muzzleFlashGfx.setScale(1);
+			},
+		});
+
+		// 2. 포신 반동 (발사 방향 반대로 후퇴 → 복귀)
+		const recoilDist = this.typeDef.style === "heavy" ? 6 : this.typeDef.style === "catapult" ? 8 : 4;
+		const recoilX = -Math.cos(worldAngleRad) * recoilDist;
+		const recoilY = Math.sin(worldAngleRad) * recoilDist;
+
+		this.barrel.setPosition(recoilX, recoilY);
+		this.scene.tweens.add({
+			targets: this.barrel,
+			x: 0,
+			y: 0,
+			duration: 250,
+			ease: "Back.easeOut",
+		});
+
+		// 3. 차체 반동 (발사 방향 반대로 약간 밀림)
+		const bodyRecoil = this.typeDef.style === "heavy" ? 3 : 2;
+		this.body.setPosition(-Math.cos(worldAngleRad) * bodyRecoil, Math.sin(worldAngleRad) * bodyRecoil);
+		this.scene.tweens.add({
+			targets: this.body,
+			x: 0,
+			y: 0,
+			duration: 300,
+			ease: "Elastic.easeOut",
+		});
+	}
+
+	/** 피격 반응 애니메이션 — 흔들림 + 스퀴시 + 흰색 플래시 */
+	playHitAnimation(damage: number): void {
+		if (this.destroyed) return;
+
+		const intensity = Math.min(1, damage / 50); // 데미지에 비례한 강도
+
+		// 1. 차체 흔들림 (피격 방향 → 반대 → 복귀)
+		const shakeAmount = 3 + intensity * 5;
+		this.scene.tweens.add({
+			targets: this.body,
+			x: { from: shakeAmount, to: 0 },
+			duration: 80,
+			yoyo: true,
+			repeat: 1 + Math.floor(intensity * 2),
+			ease: "Sine.easeInOut",
+			onComplete: () => {
+				this.body.setPosition(0, 0);
+			},
+		});
+
+		// 2. 스퀴시 효과 (찌그러졌다 복귀 — 큰 데미지일수록 강함)
+		if (intensity > 0.3) {
+			const squish = 1 + intensity * 0.15;
+			this.scene.tweens.add({
+				targets: this.body,
+				scaleX: squish,
+				scaleY: 1 / squish,
+				duration: 60,
+				yoyo: true,
+				ease: "Power2",
+				onComplete: () => {
+					this.body.setScale(1, 1);
+				},
+			});
+		}
+
+		// 3. 포신도 흔들림
+		this.scene.tweens.add({
+			targets: this.barrel,
+			x: { from: shakeAmount * 0.7, to: 0 },
+			duration: 80,
+			yoyo: true,
+			repeat: 1,
+			ease: "Sine.easeInOut",
+			onComplete: () => {
+				this.barrel.setPosition(0, 0);
+			},
+		});
+
+		// 4. 빨간 틴트 플래시 (피 느낌)
+		if (intensity > 0.5) {
+			const flashGfx = this.scene.add.graphics();
+			flashGfx.setDepth(10);
+			flashGfx.fillStyle(0xff0000, 0.3);
+			flashGfx.fillCircle(this.x, this.y - this.typeDef.height / 2, this.typeDef.width);
+			this.scene.tweens.add({
+				targets: flashGfx,
+				alpha: 0,
+				scaleX: 1.3,
+				scaleY: 1.3,
+				duration: 200,
+				ease: "Power2",
+				onComplete: () => flashGfx.destroy(),
+			});
+		}
+
+		// 5. 피격 파편 (작은 파티클)
+		const sparks = this.scene.add.graphics();
+		sparks.setDepth(8);
+		for (let i = 0; i < 3 + Math.floor(intensity * 5); i++) {
+			const angle = Math.random() * Math.PI * 2;
+			const dist = 5 + Math.random() * 15;
+			const px = this.x + Math.cos(angle) * dist;
+			const py = this.y - this.typeDef.height / 2 + Math.sin(angle) * dist;
+			sparks.fillStyle(Math.random() > 0.5 ? 0xffcc00 : 0xff8800, 0.8);
+			sparks.fillCircle(px, py, 1 + Math.random() * 2);
+		}
+		this.scene.tweens.add({
+			targets: sparks,
+			alpha: 0,
+			duration: 300,
+			onComplete: () => sparks.destroy(),
 		});
 	}
 
@@ -1300,8 +1593,12 @@ export class Tank {
 				repeat: -1,
 				ease: "Sine.easeInOut",
 			});
+			// 대기 애니메이션 시작
+			this.startIdleAnimation();
 		} else {
 			this.scene.tweens.killTweensOf(this.turnMarker);
+			// 대기 애니메이션 중지
+			this.stopIdleAnimation();
 		}
 	}
 
