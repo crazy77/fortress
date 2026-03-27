@@ -4,6 +4,7 @@ import { ALL_TANKS, type TankEra, type TankTypeDef } from "../objects/TankDefs";
 import { MAP_DEFS, type MapDef } from "../objects/Terrain";
 import { getAchievementManager } from "../systems/AchievementSystem";
 import type { AIDifficulty } from "../systems/AIPlayer";
+import { getTodayChallenge, isDailyChallengeCompleted } from "../systems/DailyChallenge";
 import { getBGM } from "../systems/BGMSystem";
 import { StatsTracker } from "../systems/GameStats";
 import { getPlayerRank } from "../systems/PlayerRank";
@@ -214,6 +215,11 @@ export class TitleScene extends Phaser.Scene {
 				ease: "Sine.easeInOut",
 			});
 		}
+
+		const daily = getTodayChallenge();
+		const dailyDone = isDailyChallengeCompleted();
+		const dailyLabel = dailyDone ? `✅ ${daily.title}` : `📋 ${daily.title}: ${daily.description}`;
+		this.add.text(cx, y + 26, dailyLabel, { fontSize: "11px", color: dailyDone ? "#27ae60" : "#f1c40f" }).setOrigin(0.5);
 	}
 
 	// ═══ 선택 행 UI ═══

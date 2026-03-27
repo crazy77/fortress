@@ -90,7 +90,7 @@ export const MAP_DEFS: MapDef[] = [
 			}
 			return heights;
 		},
-		theme: { surface: "#d4a574", soil: "#a0522d", rock: "#8b4513", highlight: "#e8c9a0" },
+		theme: { surface: "#c95a3f", soil: "#8b3a2a", rock: "#5c2018", highlight: "#e8846b" },
 		traits: { gravity: 1.0, windMultiplier: 1.5, thickness: "thin", hint: "깊은 절벽! 바운스/드릴탄이 유효" },
 	},
 	// ═══ 3. 섬 — 분리된 3개 섬, 사이에 낭떠러지 ═══
@@ -164,7 +164,7 @@ export const MAP_DEFS: MapDef[] = [
 			}
 			return heights;
 		},
-		theme: { surface: "#a1887f", soil: "#8d6e63", rock: "#5d4037", highlight: "#bcaaa4" },
+		theme: { surface: "#cfd8dc", soil: "#90a4ae", rock: "#607d8b", highlight: "#eceff1" },
 		traits: { gravity: 1.0, windMultiplier: 0.8, thickness: "thick", hint: "계단식 고저차! 고지대 점령이 핵심" },
 	},
 	// ═══ 5. 산악 — 뾰족한 지그재그 봉우리 ═══
@@ -247,7 +247,7 @@ export const MAP_DEFS: MapDef[] = [
 			}
 			return heights;
 		},
-		theme: { surface: "#a1887f", soil: "#6d4c41", rock: "#4e342e", highlight: "#bcaaa4" },
+		theme: { surface: "#78909c", soil: "#546e7a", rock: "#37474f", highlight: "#b0bec5" },
 		traits: { gravity: 1.0, windMultiplier: 0.3, thickness: "thick", hint: "성벽 뒤에서 곡사! 드릴탄으로 벽 관통 가능" },
 	},
 	// ═══ 7. 사막 — 부드러운 큰 모래언덕 + 오아시스 ═══
@@ -340,7 +340,7 @@ export const MAP_DEFS: MapDef[] = [
 			}
 			return heights;
 		},
-		theme: { surface: "#8d6e63", soil: "#6d4c41", rock: "#4e342e", highlight: "#a1887f" },
+		theme: { surface: "#9e9e9e", soil: "#757575", rock: "#424242", highlight: "#bdbdbd" },
 		traits: { gravity: 1.0, windMultiplier: 1.0, thickness: "thin", hint: "다리를 파괴하면 적이 낙사! 전략적 사격" },
 	},
 	// ═══ 10. 메사 — 평탄한 고원 + 절벽 ═══
@@ -597,5 +597,11 @@ export class Terrain {
 
 	findSurfaceBelow(x: number, startY: number): number {
 		return this.alphaMap.findSurfaceBelow(x, startY);
+	}
+
+	/** 씬 재시작 시 텍스처 메모리 해제 */
+	destroy(): void {
+		this.scene.textures.remove(this.canvasTexture.key);
+		this.image.destroy();
 	}
 }

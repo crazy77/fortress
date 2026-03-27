@@ -10,7 +10,9 @@ import {
 } from "../objects/TankDefs";
 import { Terrain } from "../objects/Terrain";
 import type { AIDifficulty } from "../systems/AIPlayer";
-import { AIPlayer } from "../systems/AIPlayer";
+import { AdvancedAI as AIPlayer } from "../systems/AdvancedAI";
+import { ShopSystem, COIN_REWARDS } from "../systems/ShopSystem";
+import { getTankProgression } from "../systems/TankProgression";
 import { type AchievementContext, getAchievementManager, showAchievementPopup } from "../systems/AchievementSystem";
 import { AudioSystem, vibrate } from "../systems/AudioSystem";
 import { getBGM } from "../systems/BGMSystem";
@@ -51,6 +53,7 @@ export class GameScene extends Phaser.Scene {
 	private aiEnabled = false;
 	private aiDifficulty: AIDifficulty = "normal";
 	private aiPlayer: AIPlayer | null = null;
+	private shopSystem!: ShopSystem;
 	private aiThinking = false;
 	private aiThinkTimer: Phaser.Time.TimerEvent | null = null;
 
@@ -130,6 +133,7 @@ export class GameScene extends Phaser.Scene {
 		this.aiEnabled = data?.aiEnabled ?? false;
 		this.aiDifficulty = data?.aiDifficulty ?? "normal";
 		this.aiPlayer = this.aiEnabled ? new AIPlayer(this.aiDifficulty) : null;
+		this.shopSystem = new ShopSystem();
 
 		this.matchManager = data?.matchManager
 			? data.matchManager
@@ -272,20 +276,28 @@ export class GameScene extends Phaser.Scene {
 		this.scene.launch("UIScene");
 		this.time.delayedCall(0, () => this.emitUIUpdate());
 
-		// UI에서 스킵 이벤트 수신
+		// UI에서 이벤트 수신
 		this.events.on("skip-turn", () => this.skipTurn());
 		this.events.on("use-item", (slotIndex: number) => this.useItem(slotIndex));
+		this.events.on("select-weapon", (player: number, index: number) => this.weaponSystem.selectWeapon(player, index));
+		this.events.on("toggle-mute", () => {
+			const muted = this.audio.toggleMute();
+			getBGM().setMuted(muted);
+		});
 
 		// 씬 셧다운 시 정리
 		this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
 			this.events.off("skip-turn");
 			this.events.off("use-item");
+			this.events.off("select-weapon");
+			this.events.off("toggle-mute");
 			this.cancelAIThink();
 			if (this.weatherSystem) this.weatherSystem.destroy();
 			if (this.waterEffect) this.waterEffect.destroy();
 			if (this.confettiEffect) this.confettiEffect.destroy();
 			if (this.keyboardAim) this.keyboardAim.destroy();
 			for (const tank of this.tanks) tank.cleanup();
+			this.terrain.destroy(); // 텍스처 메모리 누수 방지
 			getBGM().stop();
 		});
 
@@ -1274,6 +1286,10 @@ export class GameScene extends Phaser.Scene {
 				if (tank.playerIndex !== currentPlayer) {
 					this.statsTrackers[currentPlayer].recordDamage(dmg);
 					hitOpponent = true;
+					this.shopSystem.addCoins(currentPlayer, COIN_REWARDS.HIT);
+					if (dist < explosionRadius) {
+						this.shopSystem.addCoins(currentPlayer, COIN_REWARDS.DIRECT_HIT);
+					}
 				} else {
 					this.selfDamageDealt = true;
 				}
@@ -1491,6 +1507,11 @@ export class GameScene extends Phaser.Scene {
 		if (achievements.length > 0) {
 			getPlayerRank().addXP(achievements.length * 25);
 		}
+		// 코인 보상 & 전차 진행
+		this.shopSystem.addCoins(winner, COIN_REWARDS.KILL);
+		getTankProgression().addXP(this.tankTypes[0].id, winner === 0 ? 30 : 10);
+		getTankProgression().recordGame(this.tankTypes[0].id, winner === 0);
+
 		// 계급 승급 팝업
 		if (rankUp && uiScene) {
 			const delay = 500 + achievements.length * 800 + 300;
@@ -1548,6 +1569,7 @@ export class GameScene extends Phaser.Scene {
 	}
 
 	private endTurn(): void {
+		this.shopSystem.addCoins(this.turnManager.currentPlayer, COIN_REWARDS.TURN_BONUS);
 		this.cancelAIThink();
 		this.lastTickSecond = -1;
 		this.movedThisTurn = false;
@@ -1735,6 +1757,7 @@ export class GameScene extends Phaser.Scene {
 		const player = this.turnManager.currentPlayer;
 		const currentType = this.tankTypes[player];
 		this.events.emit("update-ui", {
+			coins: this.shopSystem.coins,
 			currentPlayer: player,
 			wind: this.windSystem.currentWind,
 			hp: [this.tanks[0].health, this.tanks[1].health],

@@ -93,7 +93,7 @@ const WEATHER_CONFIGS: Record<WeatherType, {
 	},
 };
 
-/** 맵 + 시간대별 날씨 결정 */
+/** 맵 + 시간대별 날씨 결정 — 모든 맵에 환경효과 배정 */
 export function getWeatherForMap(mapId: string, timeOfDay: string): WeatherType {
 	switch (mapId) {
 		case "mountains": return timeOfDay === "night" ? "snow" : "rain";
@@ -101,9 +101,12 @@ export function getWeatherForMap(mapId: string, timeOfDay: string): WeatherType 
 		case "volcano": return "ash";
 		case "hills": return timeOfDay === "night" ? "fireflies" : "leaves";
 		case "plains": return timeOfDay === "dusk" || timeOfDay === "dawn" ? "leaves" : "none";
-		case "islands": return timeOfDay === "night" ? "fireflies" : "none";
+		case "islands": return timeOfDay === "night" ? "fireflies" : "leaves";
 		case "canyon": return "sandstorm";
-		case "fortress": return timeOfDay === "night" ? "snow" : "none";
+		case "fortress": return timeOfDay === "night" ? "snow" : "leaves";
+		case "bridge": return timeOfDay === "night" ? "fireflies" : "rain";
+		case "stairs": return timeOfDay === "night" ? "snow" : "leaves";
+		case "mesa": return timeOfDay === "night" ? "fireflies" : "sandstorm";
 		default: return "none";
 	}
 }

@@ -1,6 +1,5 @@
 import Phaser from "phaser";
 import { COLORS, CONFIG, drawPanel } from "../config";
-import type { AudioSystem } from "../systems/AudioSystem";
 import { getBGM } from "../systems/BGMSystem";
 import type { GameStats } from "../systems/GameStats";
 import { getItemDef, type ItemType } from "../systems/PowerUpSystem";
@@ -298,13 +297,9 @@ export class UIScene extends Phaser.Scene {
 
 			const weaponIndex = i;
 			container.on("pointerdown", () => {
-				const gameScene = this.scene.get("GameScene") as unknown as {
-					weaponSystem?: {
-						selectWeapon: (p: number, i: number) => void;
-					};
-				};
-				if (gameScene.weaponSystem) {
-					gameScene.weaponSystem.selectWeapon(
+				const gameScene = this.scene.get("GameScene");
+				if (gameScene) {
+					gameScene.events.emit("select-weapon",
 						this.lastPlayer >= 0 ? this.lastPlayer : 0,
 						weaponIndex,
 					);
@@ -332,13 +327,9 @@ export class UIScene extends Phaser.Scene {
 		this.soundBtn.setDepth(20);
 
 		this.soundBtn.on("pointerdown", () => {
-			const gameScene = this.scene.get("GameScene") as {
-				audio?: AudioSystem;
-			};
-			if (gameScene.audio) {
-				const muted = gameScene.audio.toggleMute();
-				getBGM().setMuted(muted);
-				this.soundIcon.setText(muted ? "🔇" : "🔊");
+			const gameScene = this.scene.get("GameScene");
+			if (gameScene) {
+				gameScene.events.emit("toggle-mute");
 			}
 		});
 	}
