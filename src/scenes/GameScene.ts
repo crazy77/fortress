@@ -10,15 +10,23 @@ import {
 } from "../objects/TankDefs";
 import { Terrain } from "../objects/Terrain";
 import type { AIDifficulty } from "../systems/AIPlayer";
-import { AIPlayer } from "../systems/AIPlayer";
+import { AdvancedAI as AIPlayer } from "../systems/AdvancedAI";
+import { ShopSystem, COIN_REWARDS } from "../systems/ShopSystem";
+import { getTankProgression } from "../systems/TankProgression";
+import { type AchievementContext, getAchievementManager, showAchievementPopup } from "../systems/AchievementSystem";
 import { AudioSystem, vibrate } from "../systems/AudioSystem";
+import { getBGM } from "../systems/BGMSystem";
+import { ConfettiEffect, WaterEffect, screenFlash, slowMotionKillCam } from "../systems/EffectsSystem";
 import { StatsTracker } from "../systems/GameStats";
 import { InputHandler } from "../systems/InputHandler";
 import { MatchManager } from "../systems/MatchManager";
 import { ItemManager, getItemDef } from "../systems/PowerUpSystem";
 import { TurnManager, TurnState } from "../systems/TurnManager";
 import { WeaponSystem } from "../systems/WeaponSystem";
+import { WeatherSystem, getWeatherForMap } from "../systems/WeatherSystem";
 import { WindSystem } from "../systems/WindSystem";
+import { KeyboardAimSystem } from "../systems/KeyboardAimSystem";
+import { getPlayerRank } from "../systems/PlayerRank";
 
 export class GameScene extends Phaser.Scene {
 	private terrain!: Terrain;
@@ -45,6 +53,7 @@ export class GameScene extends Phaser.Scene {
 	private aiEnabled = false;
 	private aiDifficulty: AIDifficulty = "normal";
 	private aiPlayer: AIPlayer | null = null;
+	private shopSystem!: ShopSystem;
 	private aiThinking = false;
 	private aiThinkTimer: Phaser.Time.TimerEvent | null = null;
 
@@ -88,6 +97,25 @@ export class GameScene extends Phaser.Scene {
 	private minimapGfx!: Phaser.GameObjects.Graphics;
 	private minimapBg!: Phaser.GameObjects.Graphics;
 
+	// 새 시스템
+	private weatherSystem: WeatherSystem | null = null;
+	private waterEffect: WaterEffect | null = null;
+	private confettiEffect: ConfettiEffect | null = null;
+	private usedItemsCount = 0;
+	private selfDamageDealt = false;
+	private resolvedMapId = "";
+	private keyboardAim: KeyboardAimSystem | null = null;
+
+	// ── 게임성 메카닉 ──
+	/** 연속 명중 카운트 (플레이어별) */
+	private comboCount: [number, number] = [0, 0];
+	/** 이번 턴 이동 여부 (매복 보너스 판정) */
+	private movedThisTurn = false;
+	/** 라운드 승리 업그레이드 (플레이어별 누적 승리 수에 따른 보너스) */
+	private roundUpgrades: [number, number] = [0, 0];
+	/** 화염탄 버프 활성 (이번 발사에 적용) */
+	private fireUpActive = false;
+
 	constructor() {
 		super("GameScene");
 	}
@@ -105,6 +133,7 @@ export class GameScene extends Phaser.Scene {
 		this.aiEnabled = data?.aiEnabled ?? false;
 		this.aiDifficulty = data?.aiDifficulty ?? "normal";
 		this.aiPlayer = this.aiEnabled ? new AIPlayer(this.aiDifficulty) : null;
+		this.shopSystem = new ShopSystem();
 
 		this.matchManager = data?.matchManager
 			? data.matchManager
@@ -123,6 +152,8 @@ export class GameScene extends Phaser.Scene {
 		this.activeBuffs = { powerUp: false, damageUp: false, doubleShot: false, fireUp: false, doubleTurn: false };
 		this.shields = [0, 0];
 		this.debuffs = [{ angleLock: 0, moveLock: 0 }, { angleLock: 0, moveLock: 0 }];
+		this.comboCount = [0, 0];
+		this.movedThisTurn = false;
 		this.selectedMapId = data?.mapId;
 
 		// 라운드마다 시간대 변경
@@ -139,9 +170,12 @@ export class GameScene extends Phaser.Scene {
 		this.audio = new AudioSystem();
 		this.weaponSystem = new WeaponSystem();
 		this.itemManager = new ItemManager(2);
+		this.usedItemsCount = 0;
+		this.selfDamageDealt = false;
 
 		this.drawSky();
 		this.terrain = new Terrain(this, this.selectedMapId);
+		this.resolvedMapId = this.terrain.mapId;
 		this.mapGravity = this.terrain.traits.gravity;
 		this.mapWindMul = this.terrain.traits.windMultiplier;
 
@@ -162,7 +196,9 @@ export class GameScene extends Phaser.Scene {
 		this.tanks[0].faceToward(t2x);
 		this.tanks[1].faceToward(t1x);
 
-		// AI 대전 시 P2 이름을 "AI"로 변경
+		// 이름에 계급 배지 표시
+		const badge = getPlayerRank().getBadgeText();
+		this.tanks[0].setDisplayName(`${badge} ${this.tankTypes[0].name}`);
 		if (this.aiEnabled) {
 			this.tanks[1].setDisplayName(`AI ${this.tankTypes[1].name}`);
 		}
@@ -189,15 +225,21 @@ export class GameScene extends Phaser.Scene {
 		this.inputHandler.mapWindMul = this.mapWindMul;
 		this.inputHandler.onFire = (aim) => this.fire(aim.angle, aim.power);
 
-		// 폭발 파티클 — 향상된 이펙트
+		// 키보드 조준 시스템
+		this.keyboardAim = new KeyboardAimSystem(this);
+		this.keyboardAim.setActiveTank(this.tanks[first]);
+		this.keyboardAim.onFire = (aim) => this.fire(aim.angle, aim.power);
+
+		// 폭발 파티클 — 프리미엄 이펙트
 		this.explosionEmitter = this.add.particles(0, 0, "__DEFAULT", {
-			speed: { min: 60, max: 250 },
-			scale: { start: 0.5, end: 0 },
-			lifespan: 700,
-			tint: [0xff4400, 0xff8800, 0xffcc00, 0xff6600, 0x444444],
+			speed: { min: 40, max: 300 },
+			scale: { start: 0.6, end: 0 },
+			lifespan: 900,
+			tint: [0xff3300, 0xff6600, 0xffaa00, 0xffdd44, 0xff4400, 0x666666, 0x333333],
 			emitting: false,
-			quantity: 25,
+			quantity: 30,
 			alpha: { start: 1, end: 0 },
+			rotate: { min: 0, max: 360 },
 		});
 		this.explosionEmitter.setDepth(6);
 
@@ -213,14 +255,51 @@ export class GameScene extends Phaser.Scene {
 		this.setupKeyboard();
 		this.createMinimap();
 
+		// 날씨 시스템
+		const weatherType = getWeatherForMap(this.resolvedMapId, this.timeOfDay);
+		if (weatherType !== "none") {
+			this.weatherSystem = new WeatherSystem(this, weatherType);
+		}
+
+		// 물 애니메이션
+		this.waterEffect = new WaterEffect(this, this.resolvedMapId);
+
+		// 컨페티 이펙트
+		this.confettiEffect = new ConfettiEffect(this);
+
+		// BGM 시작
+		getBGM().setMuted(this.audio.isMuted());
+		getBGM().start("gameplay");
+
 		// UI 씬
 		this.scene.stop("UIScene");
 		this.scene.launch("UIScene");
 		this.time.delayedCall(0, () => this.emitUIUpdate());
 
-		// UI에서 스킵 이벤트 수신
+		// UI에서 이벤트 수신
 		this.events.on("skip-turn", () => this.skipTurn());
 		this.events.on("use-item", (slotIndex: number) => this.useItem(slotIndex));
+		this.events.on("select-weapon", (player: number, index: number) => this.weaponSystem.selectWeapon(player, index));
+		this.events.on("toggle-mute", () => {
+			const muted = this.audio.toggleMute();
+			getBGM().setMuted(muted);
+		});
+
+		// 씬 셧다운 시 정리
+		this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+			this.events.off("skip-turn");
+			this.events.off("use-item");
+			this.events.off("select-weapon");
+			this.events.off("toggle-mute");
+			this.cancelAIThink();
+			if (this.weatherSystem) this.weatherSystem.destroy();
+			if (this.waterEffect) this.waterEffect.destroy();
+			if (this.confettiEffect) this.confettiEffect.destroy();
+			if (this.keyboardAim) this.keyboardAim.destroy();
+			for (const tank of this.tanks) tank.cleanup();
+			this.terrain.destroy(); // 텍스처 메모리 누수 방지
+			getBGM().stop();
+		});
 
 		// INTRO 상태로 시작 (AI/입력 모두 차단)
 		this.turnManager.setState(TurnState.INTRO);
@@ -361,11 +440,9 @@ export class GameScene extends Phaser.Scene {
 		d.on("down", () => onDown(1));
 		d.on("up", () => onUp(1));
 
-		// 턴 스킵 (S 키 또는 Space)
+		// 턴 스킵 (S 키만 — SPACE는 KeyboardAimSystem의 파워 차지와 충돌하므로 제외)
 		const s = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
-		const space = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 		s.on("down", () => this.skipTurn());
-		space.on("down", () => this.skipTurn());
 	}
 
 	/** 현재 턴을 스킵 (발사하지 않고 넘김) */
@@ -418,40 +495,56 @@ export class GameScene extends Phaser.Scene {
 
 		this.minimapGfx.clear();
 
-		// 지형 실루엣 (간략 — 10px 간격 샘플링)
-		this.minimapGfx.lineStyle(1.5, 0x6abf5e, 0.7);
+		// 지형 (채운 영역으로 표시 — 더 읽기 쉬움)
+		this.minimapGfx.fillStyle(0x4a6741, 0.5);
 		this.minimapGfx.beginPath();
-		for (let wx = 0; wx < CONFIG.WORLD_WIDTH; wx += 10) {
+		this.minimapGfx.moveTo(mmX, mmY + mmH);
+		for (let wx = 0; wx < CONFIG.WORLD_WIDTH; wx += 5) {
 			const wy = this.terrain.getHeightAt(wx);
-			const mx = mmX + wx * scaleX;
-			const my = mmY + wy * scaleY;
-			if (wx === 0) this.minimapGfx.moveTo(mx, my);
-			else this.minimapGfx.lineTo(mx, my);
+			this.minimapGfx.lineTo(mmX + wx * scaleX, mmY + wy * scaleY);
+		}
+		this.minimapGfx.lineTo(mmX + mmW, mmY + mmH);
+		this.minimapGfx.closePath();
+		this.minimapGfx.fillPath();
+		// 지형 표면 선
+		this.minimapGfx.lineStyle(1, 0x8bc34a, 0.8);
+		this.minimapGfx.beginPath();
+		for (let wx = 0; wx < CONFIG.WORLD_WIDTH; wx += 5) {
+			const wy = this.terrain.getHeightAt(wx);
+			if (wx === 0) this.minimapGfx.moveTo(mmX + wx * scaleX, mmY + wy * scaleY);
+			else this.minimapGfx.lineTo(mmX + wx * scaleX, mmY + wy * scaleY);
 		}
 		this.minimapGfx.strokePath();
 
-		// 탱크 위치
+		// 탱크 위치 (더 크게, 더 선명하게)
 		for (const tank of this.tanks) {
 			const color = tank.playerIndex === 0 ? 0xe74c3c : 0x3498db;
 			const tx = mmX + tank.x * scaleX;
 			const ty = mmY + tank.y * scaleY;
-			this.minimapGfx.fillStyle(color, 1);
-			this.minimapGfx.fillCircle(tx, ty, 3);
 
-			// 현재 턴 탱크 강조
+			// 현재 턴 탱크: 글로우 효과
 			if (tank.playerIndex === this.turnManager.currentPlayer) {
-				this.minimapGfx.lineStyle(1, color, 0.6);
-				this.minimapGfx.strokeCircle(tx, ty, 5);
+				this.minimapGfx.fillStyle(color, 0.3);
+				this.minimapGfx.fillCircle(tx, ty, 7);
+				this.minimapGfx.lineStyle(1.5, color, 0.8);
+				this.minimapGfx.strokeCircle(tx, ty, 6);
 			}
+			this.minimapGfx.fillStyle(color, 1);
+			this.minimapGfx.fillCircle(tx, ty, 3.5);
+			// 흰색 테두리
+			this.minimapGfx.lineStyle(1, 0xffffff, 0.6);
+			this.minimapGfx.strokeCircle(tx, ty, 3.5);
 		}
 
-		// 카메라 뷰 영역 표시
+		// 카메라 뷰 영역 (더 선명한 표시)
 		const cam = this.cameras.main;
 		const vx = mmX + cam.scrollX * scaleX;
 		const vy = mmY + Math.max(0, cam.scrollY) * scaleY;
 		const vw = CONFIG.VIEW_WIDTH * scaleX;
 		const vh = CONFIG.PLAY_HEIGHT * scaleY;
-		this.minimapGfx.lineStyle(1, 0xffffff, 0.4);
+		this.minimapGfx.fillStyle(0xffffff, 0.05);
+		this.minimapGfx.fillRect(vx, vy, vw, Math.min(vh, mmH - (vy - mmY)));
+		this.minimapGfx.lineStyle(1.5, 0xffffff, 0.5);
 		this.minimapGfx.strokeRect(vx, vy, vw, Math.min(vh, mmH - (vy - mmY)));
 	}
 
@@ -464,20 +557,22 @@ export class GameScene extends Phaser.Scene {
 			{ top: [number, number, number]; bottom: [number, number, number] }
 		> = {
 			dawn: { top: [0x2d, 0x1b, 0x69], bottom: [0xff, 0x8c, 0x69] },
-			day: { top: [0x40, 0x80, 0xf0], bottom: [0x87, 0xce, 0xeb] },
+			day: { top: [0x30, 0x70, 0xe8], bottom: [0x87, 0xce, 0xeb] },
 			dusk: { top: [0x1a, 0x0a, 0x3e], bottom: [0xd4, 0x5d, 0x34] },
-			night: { top: [0x0a, 0x0a, 0x1e], bottom: [0x15, 0x1e, 0x3a] },
+			night: { top: [0x05, 0x05, 0x15], bottom: [0x10, 0x18, 0x30] },
 		};
 
 		const pal = palettes[this.timeOfDay];
 		const skyTop = -CONFIG.SKY_HEIGHT;
 		const skyTotal = CONFIG.PLAY_HEIGHT + CONFIG.SKY_HEIGHT;
-		const steps = 30;
+		const steps = 50; // 더 부드러운 그라데이션
 		for (let i = 0; i < steps; i++) {
 			const t = i / steps;
-			const r = Phaser.Math.Linear(pal.top[0], pal.bottom[0], t);
-			const g = Phaser.Math.Linear(pal.top[1], pal.bottom[1], t);
-			const b = Phaser.Math.Linear(pal.top[2], pal.bottom[2], t);
+			// 비선형 그라데이션 (위쪽에 더 많은 단계)
+			const ct = t * t * 0.5 + t * 0.5;
+			const r = Phaser.Math.Linear(pal.top[0], pal.bottom[0], ct);
+			const g = Phaser.Math.Linear(pal.top[1], pal.bottom[1], ct);
+			const b = Phaser.Math.Linear(pal.top[2], pal.bottom[2], ct);
 			const color = (r << 16) | (g << 8) | b;
 			gfx.fillStyle(color);
 			gfx.fillRect(
@@ -488,11 +583,50 @@ export class GameScene extends Phaser.Scene {
 			);
 		}
 
-		// 밤: 별 추가
+		// 태양/달 (시간대별)
+		const celestialX = CONFIG.WORLD_WIDTH * 0.75;
+		const celestialY = -CONFIG.SKY_HEIGHT * 0.3;
+		const celestial = this.add.graphics();
+		celestial.setDepth(-1.8);
+
+		if (this.timeOfDay === "day") {
+			// 태양: 글로우 + 본체
+			celestial.fillStyle(0xfff8e1, 0.08);
+			celestial.fillCircle(celestialX, celestialY, 80);
+			celestial.fillStyle(0xfff176, 0.15);
+			celestial.fillCircle(celestialX, celestialY, 50);
+			celestial.fillStyle(0xffd54f, 0.3);
+			celestial.fillCircle(celestialX, celestialY, 30);
+			celestial.fillStyle(0xffecb3, 0.6);
+			celestial.fillCircle(celestialX, celestialY, 18);
+		} else if (this.timeOfDay === "dawn" || this.timeOfDay === "dusk") {
+			// 석양/새벽 태양: 큰 글로우 + 붉은빛
+			const sunY = celestialY + 80;
+			celestial.fillStyle(0xff8a65, 0.06);
+			celestial.fillCircle(celestialX, sunY, 120);
+			celestial.fillStyle(0xff7043, 0.12);
+			celestial.fillCircle(celestialX, sunY, 60);
+			celestial.fillStyle(0xffab91, 0.25);
+			celestial.fillCircle(celestialX, sunY, 25);
+		} else {
+			// 달: 은빛 글로우
+			celestial.fillStyle(0xcfd8dc, 0.05);
+			celestial.fillCircle(celestialX, celestialY, 60);
+			celestial.fillStyle(0xeceff1, 0.12);
+			celestial.fillCircle(celestialX, celestialY, 30);
+			celestial.fillStyle(0xfafafa, 0.4);
+			celestial.fillCircle(celestialX, celestialY, 16);
+			// 달 크레이터
+			celestial.fillStyle(0xcfd8dc, 0.25);
+			celestial.fillCircle(celestialX - 5, celestialY - 3, 4);
+			celestial.fillCircle(celestialX + 7, celestialY + 4, 3);
+		}
+
+		// 밤: 별 추가 (반짝이는 애니메이션 포함)
 		if (this.timeOfDay === "night") {
 			this.starsGfx = this.add.graphics();
 			this.starsGfx.setDepth(-1.5);
-			for (let i = 0; i < 100; i++) {
+			for (let i = 0; i < 150; i++) {
 				const sx = Math.random() * CONFIG.WORLD_WIDTH;
 				const sy = -CONFIG.SKY_HEIGHT + Math.random() * (CONFIG.PLAY_HEIGHT * 0.5 + CONFIG.SKY_HEIGHT);
 				const size = 0.5 + Math.random() * 1.5;
@@ -545,6 +679,14 @@ export class GameScene extends Phaser.Scene {
 		// 파워업 낙하 업데이트 (상태 무관하게 항상)
 		this.itemManager.updateFalling(this.terrain);
 
+		// 날씨/물/컨페티 업데이트
+		if (this.weatherSystem) {
+			this.weatherSystem.setWind(this.windSystem.currentWind);
+			this.weatherSystem.update(delta);
+		}
+		if (this.waterEffect) this.waterEffect.update(delta);
+		if (this.confettiEffect) this.confettiEffect.update(delta);
+
 		// 미니맵 갱신
 		this.updateMinimap();
 
@@ -557,6 +699,7 @@ export class GameScene extends Phaser.Scene {
 				if (this.isCurrentPlayerAI()) {
 					this.inputHandler.setEnabled(false);
 					this.setMoveButtonsVisible(false);
+					if (this.keyboardAim) this.keyboardAim.setEnabled(false);
 
 					if (!this.aiThinking) {
 						this.aiThinking = true;
@@ -567,12 +710,14 @@ export class GameScene extends Phaser.Scene {
 				} else {
 					this.inputHandler.setEnabled(true);
 					this.setMoveButtonsVisible(true);
+					if (this.keyboardAim) this.keyboardAim.setEnabled(true);
 					const cp = this.turnManager.currentPlayer;
 				if (this.movingDirection !== 0 && this.debuffs[cp].moveLock <= 0) {
 						const tank = this.tanks[cp];
 						if (this.turnManager.fuel > 0) {
 							if (tank.tryMove(this.movingDirection)) {
 								this.turnManager.consumeFuel();
+								this.movedThisTurn = true;
 								this.audio.playMove(this.tankTypes[this.turnManager.currentPlayer].style);
 
 								// 이동 시 파워업 수집 체크
@@ -614,6 +759,7 @@ export class GameScene extends Phaser.Scene {
 			case TurnState.FLIGHT:
 				this.inputHandler.setEnabled(false);
 				this.setMoveButtonsVisible(false);
+				if (this.keyboardAim) this.keyboardAim.setEnabled(false);
 				this.updateProjectiles();
 				break;
 
@@ -651,6 +797,7 @@ export class GameScene extends Phaser.Scene {
 
 		this.audio.playPickup();
 		vibrate(20);
+		this.usedItemsCount++;
 		const def = getItemDef(itemType);
 
 		switch (itemType) {
@@ -685,6 +832,37 @@ export class GameScene extends Phaser.Scene {
 				this.windSystem.currentWind *= -1;
 				this.inputHandler.currentWind = this.windSystem.currentWind;
 				break;
+			case "teleport": {
+				// 랜덤 안전 위치로 텔레포트
+				const margin = CONFIG.TANK_WIDTH * 2;
+				let newX = margin + Math.random() * (CONFIG.WORLD_WIDTH - margin * 2);
+				let foundSafe = false;
+				for (let attempts = 0; attempts < 30; attempts++) {
+					const surfY = this.terrain.getHeightAt(newX);
+					if (surfY < CONFIG.PLAY_HEIGHT - 20) { foundSafe = true; break; }
+					newX = margin + Math.random() * (CONFIG.WORLD_WIDTH - margin * 2);
+				}
+				if (!foundSafe) {
+					// 안전한 위치 없음 — 텔레포트 취소, 아이템 반환
+					this.itemManager.inventories[player].add("teleport");
+					break;
+				}
+				// 텔레포트 이펙트
+				const oldX = this.tanks[player].x;
+				const oldY = this.tanks[player].y;
+				screenFlash(this, 0xe91e63, 200, 0.3);
+				this.tanks[player].x = newX;
+				this.tanks[player].settleOnTerrain();
+				// 출발점 이펙트
+				const sparkGfx = this.add.graphics();
+				sparkGfx.setDepth(15);
+				sparkGfx.fillStyle(0xe91e63, 0.6);
+				sparkGfx.fillCircle(oldX, oldY, 20);
+				this.tweens.add({ targets: sparkGfx, alpha: 0, scaleX: 2, scaleY: 2, duration: 400, onComplete: () => sparkGfx.destroy() });
+				// 카메라 이동
+				this.cameras.main.pan(this.tanks[player].x, this.tanks[player].y - 40, 500, "Sine.easeInOut");
+				break;
+			}
 			// 디버프 (턴 소모 — 상대에게 적용)
 			case "angleLock": {
 				const opponent = player === 0 ? 1 : 0;
@@ -843,8 +1021,8 @@ export class GameScene extends Phaser.Scene {
 		}
 		const isDoubleShot = this.activeBuffs.doubleShot;
 		if (isDoubleShot) this.activeBuffs.doubleShot = false;
-		const isFireUp = this.activeBuffs.fireUp;
-		if (isFireUp) this.activeBuffs.fireUp = false;
+		this.fireUpActive = this.activeBuffs.fireUp;
+		if (this.fireUpActive) this.activeBuffs.fireUp = false;
 
 		this.projectiles = [];
 		this.totalDamageThisSalvo = 0;
@@ -896,6 +1074,7 @@ export class GameScene extends Phaser.Scene {
 		if (isDoubleShot) {
 			const delay = 300; // ms
 			this.time.delayedCall(delay, () => {
+				if (this.turnManager.state !== TurnState.FLIGHT) return; // 턴 종료 시 무시
 				const muzzle2 = tank.getMuzzlePosition();
 				if (weapon.projectileCount > 1) {
 					const count = weapon.projectileCount;
@@ -928,6 +1107,7 @@ export class GameScene extends Phaser.Scene {
 		this.weaponSystem.consumeAmmo(player);
 		this.turnManager.setState(TurnState.FLIGHT);
 		this.audio.playFire(tankType.style);
+		tank.playFireAnimation();
 		vibrate(30);
 
 		this.statsTrackers[player].recordShot();
@@ -960,18 +1140,69 @@ export class GameScene extends Phaser.Scene {
 
 		this.terrain.explode(x, y, explosionRadius);
 
-		// 향상된 폭발 이펙트 — 2단계 파티클
-		this.explosionEmitter.explode(25, x, y);
-		// 추가 잔해 파티클
-		this.time.delayedCall(50, () => {
-			this.explosionEmitter.explode(
-				10,
-				x + Phaser.Math.Between(-10, 10),
-				y + Phaser.Math.Between(-10, 10),
-			);
+		// 특수 무기 효과
+		if (proj.weapon.special === "napalm") {
+			this.audio.playNapalm();
+			this.handleNapalmEffect(x, y, currentPlayer);
+		} else if (proj.weapon.special === "drill") {
+			this.audio.playDrill();
+			// 드릴: 지형 관통 후 추가 폭발
+			this.terrain.explode(x, y + 25, explosionRadius * 0.7);
+			this.terrain.explode(x, y + 50, explosionRadius * 0.5);
+		} else if (proj.weapon.special === "dirtball") {
+			// 흙덩이: 지형 추가 (파괴 대신)
+			this.terrain.addDirt(x, y, explosionRadius);
+			// 탱크가 묻히면 위로 밀어내기 + 소량 데미지
+			for (const tank of this.tanks) {
+				if (this.terrain.isSolid(tank.x, tank.y - 5)) {
+					tank.takeDamage(5);
+					// 지형 위로 밀어내기 (매몰 방지)
+					let pushY = tank.y;
+					while (pushY > 0 && this.terrain.isSolid(tank.x, pushY)) {
+						pushY--;
+					}
+					tank.x = tank.x; // keep x
+					tank.y = pushY;
+					tank.settleOnTerrain();
+				}
+			}
+		}
+
+		// 화염탄 버프: 착탄 시 미니 나팔름 (40px 범위)
+		if (this.fireUpActive) {
+			this.fireUpActive = false;
+			this.handleNapalmEffect(x, y, currentPlayer);
+		}
+
+		// 향상된 폭발 이펙트 — 3단계 파티클 + 플래시
+		this.explosionEmitter.explode(30, x, y);
+		// 2단계: 잔해
+		this.time.delayedCall(40, () => {
+			this.explosionEmitter.explode(12, x + Phaser.Math.Between(-10, 10), y + Phaser.Math.Between(-10, 10));
+		});
+		// 3단계: 연기
+		this.time.delayedCall(120, () => {
+			this.explosionEmitter.explode(8, x + Phaser.Math.Between(-15, 15), y + Phaser.Math.Between(-15, 5));
+		});
+		// 임팩트 플래시 (폭발 크기에 비례)
+		const flashSize = explosionRadius * 2;
+		const flashGfx = this.add.graphics();
+		flashGfx.setDepth(15);
+		flashGfx.fillStyle(0xffffcc, 0.6);
+		flashGfx.fillCircle(x, y, flashSize);
+		flashGfx.fillStyle(0xffffff, 0.3);
+		flashGfx.fillCircle(x, y, flashSize * 0.5);
+		this.tweens.add({
+			targets: flashGfx,
+			alpha: 0,
+			scaleX: 1.5,
+			scaleY: 1.5,
+			duration: 200,
+			ease: "Power3",
+			onComplete: () => flashGfx.destroy(),
 		});
 
-		this.audio.playExplosion();
+		this.audio.playExplosion(explosionRadius / 40, attackerType.style);
 
 		// 파워업 드롭 시도
 		this.itemManager.trySpawnAt(this, x, this.terrain);
@@ -979,15 +1210,16 @@ export class GameScene extends Phaser.Scene {
 		this.itemManager.checkFallingAfterExplosion(this.terrain);
 
 		let totalDamage = 0;
+		let hitOpponent = false;
 		for (const tank of this.tanks) {
 			const dist = Phaser.Math.Distance.Between(x, y, tank.x, tank.y);
 			let dmg = 0;
 			if (dist < explosionRadius) {
 				dmg = directDamage;
-			} else if (dist < splashRadius) {
+			} else if (dist < splashRadius && splashRadius > explosionRadius) {
 				const ratio =
 					1 - (dist - explosionRadius) / (splashRadius - explosionRadius);
-				dmg = Math.round(splashDamage * ratio);
+				dmg = Math.round(splashDamage * Math.max(0, ratio));
 			}
 
 			// 시대 상성
@@ -1000,12 +1232,42 @@ export class GameScene extends Phaser.Scene {
 				dmg = Math.round(dmg * eraMultiplier);
 			}
 
-			// 고도 보너스
+			// 고도 보너스 + 시각 피드백
 			if (dmg > 0 && tank.playerIndex !== currentPlayer) {
 				const attacker = this.tanks[currentPlayer];
 				const heightDiff = tank.y - attacker.y;
 				if (heightDiff > CONFIG.ALTITUDE_BONUS_THRESHOLD) {
 					dmg = Math.round(dmg * CONFIG.ALTITUDE_BONUS_MULTIPLIER);
+					// 고지대 보너스 시각 피드백
+					const bonusTxt = this.add.text(x, y - 30, "⬆ 고지대!", {
+						fontSize: "13px", color: "#f1c40f", stroke: "#000000", strokeThickness: 2, fontStyle: "bold",
+					}).setOrigin(0.5).setDepth(20);
+					this.tweens.add({ targets: bonusTxt, y: bonusTxt.y - 25, alpha: 0, duration: 1000, onComplete: () => bonusTxt.destroy() });
+				}
+			}
+
+			// 분노 모드 (HP 30% 이하 → 1.3배 데미지)
+			if (dmg > 0 && tank.playerIndex !== currentPlayer) {
+				const attacker = this.tanks[currentPlayer];
+				if (attacker.health > 0 && attacker.health <= CONFIG.TANK_HP * 0.3) {
+					dmg = Math.round(dmg * 1.3);
+					const rageTxt = this.add.text(attacker.x, attacker.y - 45, "🔥 분노!", {
+						fontSize: "14px", color: "#ff4444", stroke: "#000000", strokeThickness: 3, fontStyle: "bold",
+					}).setOrigin(0.5).setDepth(20);
+					this.tweens.add({ targets: rageTxt, y: rageTxt.y - 30, alpha: 0, duration: 1200, onComplete: () => rageTxt.destroy() });
+				}
+			}
+
+			// 매복 보너스 (이동 안 했으면 +10% 데미지)
+			if (dmg > 0 && tank.playerIndex !== currentPlayer && !this.movedThisTurn) {
+				dmg = Math.round(dmg * 1.1);
+			}
+
+			// 라운드 업그레이드 보너스
+			if (dmg > 0 && tank.playerIndex !== currentPlayer) {
+				const upgrade = this.roundUpgrades[currentPlayer];
+				if (upgrade > 0) {
+					dmg = Math.round(dmg * (1 + Math.min(upgrade * 0.05, 0.25))); // 승리당 +5%, 최대 +25% 캡
 				}
 			}
 
@@ -1013,22 +1275,50 @@ export class GameScene extends Phaser.Scene {
 			if (dmg > 0 && this.shields[tank.playerIndex] > 0) {
 				dmg = Math.round(dmg * (1 - this.shields[tank.playerIndex]));
 				this.shields[tank.playerIndex] = 0;
-				// 쉴드 파괴 이펙트
 				this.showShieldBreak(tank.x, tank.y);
 			}
 
 			if (dmg > 0) {
 				tank.takeDamage(dmg);
-				this.audio.playHit();
+				this.audio.playHit(this.tankTypes[tank.playerIndex].style);
 				totalDamage += dmg;
 
 				if (tank.playerIndex !== currentPlayer) {
 					this.statsTrackers[currentPlayer].recordDamage(dmg);
+					hitOpponent = true;
+					this.shopSystem.addCoins(currentPlayer, COIN_REWARDS.HIT);
+					if (dist < explosionRadius) {
+						this.shopSystem.addCoins(currentPlayer, COIN_REWARDS.DIRECT_HIT);
+					}
+				} else {
+					this.selfDamageDealt = true;
 				}
 			}
 		}
 
+		// 콤보 시스템
+		if (hitOpponent) {
+			this.comboCount[currentPlayer]++;
+			const combo = this.comboCount[currentPlayer];
+			if (combo >= 2) {
+				const comboTxt = this.add.text(
+					this.tanks[currentPlayer].x, this.tanks[currentPlayer].y - 55,
+					combo >= 3 ? `🔥 ${combo}연속 명중!` : `✨ ${combo}연속!`,
+					{ fontSize: combo >= 3 ? "18px" : "15px", color: combo >= 3 ? "#ff6600" : "#f1c40f", stroke: "#000000", strokeThickness: 3, fontStyle: "bold" },
+				).setOrigin(0.5).setDepth(20);
+				this.tweens.add({ targets: comboTxt, y: comboTxt.y - 30, alpha: 0, duration: 1200, onComplete: () => comboTxt.destroy() });
+			}
+		} else {
+			this.comboCount[currentPlayer] = 0;
+		}
+
 		this.totalDamageThisSalvo += totalDamage;
+
+		// BGM 긴장도 업데이트 (양 탱크 중 하나라도 HP 30% 이하면 intense)
+		const anyLowHp = this.tanks.some((t) => t.health > 0 && t.health <= CONFIG.TANK_HP * 0.3);
+		if (anyLowHp) {
+			getBGM().start("intense");
+		}
 
 		const shakeIntensity =
 			(0.005 + (totalDamage / CONFIG.TANK_HP) * 0.02) *
@@ -1048,6 +1338,61 @@ export class GameScene extends Phaser.Scene {
 				this.turnManager.setState(TurnState.CLEANUP);
 			});
 		}
+	}
+
+	/** 나팔름 효과: 수평 160px 범위 화염 확산 */
+	private handleNapalmEffect(cx: number, _cy: number, attacker: number): void {
+		const spread = 80; // 좌우 80px씩 (총 160px)
+		const fireCount = 8;
+		const step = (spread * 2) / fireCount;
+
+		for (let i = 0; i < fireCount; i++) {
+			const fx = Phaser.Math.Clamp(cx - spread + i * step, 5, CONFIG.WORLD_WIDTH - 5);
+			const fy = this.terrain.getHeightAt(fx);
+
+			// 작은 폭발
+			this.terrain.explode(fx, fy, 10);
+
+			// 화염 파티클
+			const delay = i * 60;
+			this.time.delayedCall(delay, () => {
+				this.explosionEmitter.explode(5, fx, fy);
+
+				// 화염 데미지 (범위 내 탱크에 소량 데미지)
+				for (const tank of this.tanks) {
+					const dist = Math.abs(tank.x - fx);
+					if (dist < 25) {
+						const fireDmg = Math.round(8 * (1 - dist / 25));
+						if (fireDmg > 0) {
+							tank.takeDamage(fireDmg);
+							this.audio.playHit(this.tankTypes[tank.playerIndex].style);
+							if (tank.playerIndex === attacker) {
+								this.selfDamageDealt = true;
+							} else {
+								this.statsTrackers[attacker].recordDamage(fireDmg);
+							}
+						}
+					}
+				}
+			});
+		}
+
+		// 화염 이펙트 시각화
+		const fireGfx = this.add.graphics();
+		fireGfx.setDepth(6);
+		for (let i = 0; i < fireCount * 2; i++) {
+			const fx = cx - spread + Math.random() * spread * 2;
+			const fy = this.terrain.getHeightAt(fx);
+			fireGfx.fillStyle(Phaser.Math.Between(0, 1) ? 0xff4400 : 0xff8800, 0.7);
+			fireGfx.fillCircle(fx, fy - 3, 4 + Math.random() * 6);
+		}
+		this.tweens.add({
+			targets: fireGfx,
+			alpha: 0,
+			duration: 1500,
+			ease: "Power2",
+			onComplete: () => fireGfx.destroy(),
+		});
 	}
 
 	private showShieldBreak(x: number, y: number): void {
@@ -1091,8 +1436,13 @@ export class GameScene extends Phaser.Scene {
 				this.inputHandler.setEnabled(false);
 				this.cancelAIThink();
 				const winner: 0 | 1 = i === 0 ? 1 : 0;
-				this.handleRoundOver(winner);
 				vibrate([100, 50, 200]);
+
+				// 슬로모션 킬캠
+				const deadTank = this.tanks[i];
+				slowMotionKillCam(this, deadTank.x, deadTank.y, () => {
+					this.handleRoundOver(winner);
+				});
 				return;
 			}
 		}
@@ -1103,6 +1453,72 @@ export class GameScene extends Phaser.Scene {
 	private handleRoundOver(winner: 0 | 1): void {
 		for (const tank of this.tanks) tank.setTurnActive(false);
 		this.matchManager.recordWin(winner);
+
+		// 라운드 업그레이드: 승자에게 다음 라운드 보너스
+		this.roundUpgrades[winner]++;
+
+		// BGM 전환
+		getBGM().start(winner === 0 ? "victory" : "defeat");
+
+		// 컨페티 효과
+		if (this.confettiEffect) {
+			this.confettiEffect.shower(150);
+		}
+		screenFlash(this, winner === 0 ? 0x3498db : 0xe74c3c, 300, 0.2);
+
+		// 업적 체크
+		const achCtx: AchievementContext = {
+			won: winner === 0,
+			accuracy: this.statsTrackers[0].getAccuracy(),
+			totalDamage: this.statsTrackers[0].getStats().totalDamageDealt,
+			maxSingleHit: this.statsTrackers[0].getStats().maxSingleHit,
+			turnsPlayed: this.statsTrackers[0].getStats().turnsPlayed,
+			shotsFired: this.statsTrackers[0].getStats().shotsFired,
+			shotsHit: this.statsTrackers[0].getStats().shotsHit,
+			selfDamage: 0,
+			opponentHpLeft: this.tanks[1].health,
+			myHpLeft: this.tanks[0].health,
+			mapId: this.resolvedMapId,
+			tankId: this.tankTypes[0].id,
+			aiEnabled: this.aiEnabled,
+			aiDifficulty: this.aiDifficulty,
+			noSelfDamage: !this.selfDamageDealt,
+			usedItems: this.usedItemsCount,
+			perfectRound: winner === 0 && this.tanks[0].health >= CONFIG.TANK_HP,
+		};
+		const achievements = getAchievementManager().checkAchievements(achCtx);
+
+		// 업적 팝업 표시 (UIScene에서)
+		const uiScene = this.scene.get("UIScene");
+		if (uiScene) {
+			for (let i = 0; i < achievements.length; i++) {
+				this.time.delayedCall(500 + i * 800, () => {
+					showAchievementPopup(uiScene, achievements[i], i * 90);
+				});
+			}
+		}
+
+		// 계급 XP 부여
+		const rankUp = getPlayerRank().recordGameResult(
+			winner === 0,
+			this.statsTrackers[0].getAccuracy(),
+		);
+		// 업적 해금 XP 추가
+		if (achievements.length > 0) {
+			getPlayerRank().addXP(achievements.length * 25);
+		}
+		// 코인 보상 & 전차 진행
+		this.shopSystem.addCoins(winner, COIN_REWARDS.KILL);
+		getTankProgression().addXP(this.tankTypes[0].id, winner === 0 ? 30 : 10);
+		getTankProgression().recordGame(this.tankTypes[0].id, winner === 0);
+
+		// 계급 승급 팝업
+		if (rankUp && uiScene) {
+			const delay = 500 + achievements.length * 800 + 300;
+			this.time.delayedCall(delay, () => {
+				this.showRankUpPopup(uiScene, rankUp);
+			});
+		}
 
 		if (this.matchManager.isMatchOver()) {
 			const matchWinner = this.matchManager.getMatchWinner() ?? 0;
@@ -1137,6 +1553,7 @@ export class GameScene extends Phaser.Scene {
 			});
 
 			this.time.delayedCall(2500, () => {
+				// SHUTDOWN 이벤트 핸들러가 정리하므로 여기서 중복 정리하지 않음
 				this.itemManager.destroyAll();
 				this.scene.restart({
 					aiEnabled: this.aiEnabled,
@@ -1152,11 +1569,23 @@ export class GameScene extends Phaser.Scene {
 	}
 
 	private endTurn(): void {
+		this.shopSystem.addCoins(this.turnManager.currentPlayer, COIN_REWARDS.TURN_BONUS);
 		this.cancelAIThink();
 		this.lastTickSecond = -1;
+		this.movedThisTurn = false;
+
+		// 3연속 명중 시 추가 턴 보너스
+		const currentPlayer = this.turnManager.currentPlayer;
+		if (this.comboCount[currentPlayer] >= 3 && !this.activeBuffs.doubleTurn) {
+			this.activeBuffs.doubleTurn = true;
+			const tank = this.tanks[currentPlayer];
+			const bonusTxt = this.add.text(tank.x, tank.y - 65, "⚡ 콤보 추가 턴!", {
+				fontSize: "16px", color: "#9b59b6", stroke: "#000000", strokeThickness: 3, fontStyle: "bold",
+			}).setOrigin(0.5).setDepth(20);
+			this.tweens.add({ targets: bonusTxt, y: bonusTxt.y - 30, alpha: 0, duration: 1500, onComplete: () => bonusTxt.destroy() });
+		}
 
 		// 더블 턴 체크
-		const currentPlayer = this.turnManager.currentPlayer;
 		if (this.activeBuffs.doubleTurn) {
 			this.activeBuffs.doubleTurn = false;
 			// 같은 플레이어가 다시 플레이 (턴 스위치 건너뛰기)
@@ -1211,6 +1640,13 @@ export class GameScene extends Phaser.Scene {
 		this.inputHandler.activeTank = tank;
 		this.inputHandler.maxPower = currentType.maxPower;
 		this.inputHandler.currentWind = this.windSystem.currentWind;
+		// angleLock 디버프 반영
+		this.inputHandler.angleLocked = this.debuffs[nextPlayer].angleLock > 0;
+
+		// 키보드 조준 업데이트
+		if (this.keyboardAim) {
+			this.keyboardAim.setActiveTank(tank);
+		}
 
 		// 턴 마커 전환
 		for (let i = 0; i < this.tanks.length; i++) {
@@ -1236,10 +1672,92 @@ export class GameScene extends Phaser.Scene {
 		return false;
 	}
 
+	/** 계급 승급 팝업 — 화려한 연출 */
+	private showRankUpPopup(scene: Phaser.Scene, rank: import("../systems/PlayerRank").RankDef): void {
+		const cx = 640;
+		const startY = -100;
+		const targetY = 240;
+
+		const container = scene.add.container(cx, startY);
+		container.setDepth(210);
+
+		const w = 360;
+		const h = 100;
+
+		// 배경 패널 (계급 색상 글로우)
+		const bg = scene.add.graphics();
+		bg.fillStyle(0x0a0e17, 0.95);
+		bg.fillRoundedRect(-w / 2, -h / 2, w, h, 16);
+		bg.lineStyle(3, rank.color, 0.9);
+		bg.strokeRoundedRect(-w / 2, -h / 2, w, h, 16);
+		// 외곽 글로우
+		bg.lineStyle(6, rank.color, 0.2);
+		bg.strokeRoundedRect(-w / 2 - 3, -h / 2 - 3, w + 6, h + 6, 19);
+		container.add(bg);
+
+		// 상단 쉬머 바
+		const shimmer = scene.add.graphics();
+		shimmer.fillStyle(rank.color, 0.4);
+		shimmer.fillRoundedRect(-w / 2 + 2, -h / 2 + 2, w - 4, 4, 2);
+		container.add(shimmer);
+
+		// "RANK UP!" 라벨
+		const label = scene.add.text(0, -h / 2 + 18, "RANK UP!", {
+			fontSize: "11px", color: rank.colorHex, fontStyle: "bold", letterSpacing: 3,
+		}).setOrigin(0.5);
+		container.add(label);
+
+		// 큰 아이콘
+		const icon = scene.add.text(-50, 8, rank.icon, { fontSize: "42px" }).setOrigin(0.5);
+		container.add(icon);
+
+		// 계급 이름
+		const name = scene.add.text(20, -2, rank.name, {
+			fontSize: "22px", color: rank.colorHex, fontStyle: "bold",
+		}).setOrigin(0, 0.5);
+		container.add(name);
+
+		// 레벨
+		const lv = scene.add.text(20, 22, `Lv.${rank.tier + 1}`, {
+			fontSize: "13px", color: "#aab2c8",
+		}).setOrigin(0, 0.5);
+		container.add(lv);
+
+		// 아이콘 펄스 애니메이션
+		scene.tweens.add({
+			targets: icon,
+			scaleX: 1.3, scaleY: 1.3,
+			duration: 300,
+			yoyo: true,
+			repeat: 2,
+			ease: "Sine.easeInOut",
+		});
+
+		// 슬라이드인
+		scene.tweens.add({
+			targets: container,
+			y: targetY,
+			duration: 700,
+			ease: "Back.easeOut",
+			onComplete: () => {
+				scene.tweens.add({
+					targets: container,
+					alpha: 0,
+					y: targetY - 40,
+					delay: 3500,
+					duration: 600,
+					ease: "Power2",
+					onComplete: () => container.destroy(),
+				});
+			},
+		});
+	}
+
 	private emitUIUpdate(): void {
 		const player = this.turnManager.currentPlayer;
 		const currentType = this.tankTypes[player];
 		this.events.emit("update-ui", {
+			coins: this.shopSystem.coins,
 			currentPlayer: player,
 			wind: this.windSystem.currentWind,
 			hp: [this.tanks[0].health, this.tanks[1].health],
@@ -1267,6 +1785,8 @@ export class GameScene extends Phaser.Scene {
 			debuffs: this.debuffs,
 			inventory: this.itemManager.inventories.map((inv) => [...inv.items]),
 			timeOfDay: this.timeOfDay,
+			combo: this.comboCount,
+			roundUpgrades: this.roundUpgrades,
 		});
 	}
 }

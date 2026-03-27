@@ -27,6 +27,25 @@ export class TerrainAlphaMap {
 		return this.map[iy * this.width + ix] === 1;
 	}
 
+	/** 원형 영역을 채움 (흙덩이) */
+	fillCircle(cx: number, cy: number, radius: number): void {
+		const r2 = radius * radius;
+		const minX = Math.max(0, Math.floor(cx - radius));
+		const maxX = Math.min(this.width - 1, Math.ceil(cx + radius));
+		const minY = Math.max(0, Math.floor(cy - radius));
+		const maxY = Math.min(this.height - 1, Math.ceil(cy + radius));
+
+		for (let y = minY; y <= maxY; y++) {
+			for (let x = minX; x <= maxX; x++) {
+				const dx = x - cx;
+				const dy = y - cy;
+				if (dx * dx + dy * dy <= r2) {
+					this.map[y * this.width + x] = 1;
+				}
+			}
+		}
+	}
+
 	/** 원형 영역을 제거 (폭발) */
 	clearCircle(cx: number, cy: number, radius: number): void {
 		const r2 = radius * radius;

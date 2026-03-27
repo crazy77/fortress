@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { COLORS, CONFIG, drawPanel } from "../config";
-import type { AudioSystem } from "../systems/AudioSystem";
+import { getBGM } from "../systems/BGMSystem";
 import type { GameStats } from "../systems/GameStats";
 import { getItemDef, type ItemType } from "../systems/PowerUpSystem";
 import type { WeaponDef } from "../systems/WeaponSystem";
@@ -110,6 +110,7 @@ export class UIScene extends Phaser.Scene {
 			fontSize: "20px",
 			color: "#ffffff",
 			fontStyle: "bold",
+			shadow: { offsetX: 0, offsetY: 0, color: "#ffffff", blur: 6, fill: true, stroke: true },
 		});
 		this.p1HpBarGfx = this.add.graphics();
 		this.p1ShieldIcon = this.add.text(240, 16, "", {
@@ -127,6 +128,7 @@ export class UIScene extends Phaser.Scene {
 			fontSize: "20px",
 			color: "#ffffff",
 			fontStyle: "bold",
+			shadow: { offsetX: 0, offsetY: 0, color: "#ffffff", blur: 6, fill: true, stroke: true },
 		});
 		this.p2HpBarGfx = this.add.graphics();
 		this.p2ShieldIcon = this.add.text(1236, 16, "", {
@@ -252,9 +254,9 @@ export class UIScene extends Phaser.Scene {
 	}
 
 	private createWeaponButtons(): void {
-		const btnSize = 56;
-		const gap = 8;
-		const count = 4;
+		const btnSize = 50;
+		const gap = 5;
+		const count = 8;
 		const totalWidth = count * btnSize + (count - 1) * gap;
 		const startX = (CONFIG.VIEW_WIDTH - totalWidth) / 2;
 		const btnY = CONFIG.PLAY_HEIGHT + CONFIG.UI_BAR_HEIGHT / 2;
@@ -274,7 +276,7 @@ export class UIScene extends Phaser.Scene {
 			icon.setOrigin(0.5);
 			this.weaponBtnIcons.push(icon);
 
-			const ammoText = this.add.text(0, 18, "", {
+			const ammoText = this.add.text(0, 14, "", {
 				fontSize: "10px",
 				color: "#ffffff",
 				fontStyle: "bold",
@@ -282,20 +284,22 @@ export class UIScene extends Phaser.Scene {
 			ammoText.setOrigin(0.5);
 			this.weaponBtnAmmos.push(ammoText);
 
-			const container = this.add.container(x, btnY, [bg, icon, ammoText]);
+			const shortcutLabel = this.add.text(0, 22, `${i + 1}`, {
+				fontSize: "8px",
+				color: Phaser.Display.Color.IntegerToColor(COLORS.TEXT_SECONDARY).rgba,
+			});
+			shortcutLabel.setOrigin(0.5);
+
+			const container = this.add.container(x, btnY, [bg, icon, ammoText, shortcutLabel]);
 			container.setSize(btnSize, btnSize);
 			container.setInteractive();
 			container.setDepth(20);
 
 			const weaponIndex = i;
 			container.on("pointerdown", () => {
-				const gameScene = this.scene.get("GameScene") as unknown as {
-					weaponSystem?: {
-						selectWeapon: (p: number, i: number) => void;
-					};
-				};
-				if (gameScene.weaponSystem) {
-					gameScene.weaponSystem.selectWeapon(
+				const gameScene = this.scene.get("GameScene");
+				if (gameScene) {
+					gameScene.events.emit("select-weapon",
 						this.lastPlayer >= 0 ? this.lastPlayer : 0,
 						weaponIndex,
 					);
@@ -323,12 +327,9 @@ export class UIScene extends Phaser.Scene {
 		this.soundBtn.setDepth(20);
 
 		this.soundBtn.on("pointerdown", () => {
-			const gameScene = this.scene.get("GameScene") as {
-				audio?: AudioSystem;
-			};
-			if (gameScene.audio) {
-				const muted = gameScene.audio.toggleMute();
-				this.soundIcon.setText(muted ? "🔇" : "🔊");
+			const gameScene = this.scene.get("GameScene");
+			if (gameScene) {
+				gameScene.events.emit("toggle-mute");
 			}
 		});
 	}
@@ -427,8 +428,8 @@ export class UIScene extends Phaser.Scene {
 	}
 
 	private updateWeaponButtons(data: UIData): void {
-		const btnSize = 56;
-		for (let i = 0; i < 4; i++) {
+		const btnSize = 50;
+		for (let i = 0; i < 8; i++) {
 			if (i >= data.weapons.length) {
 				this.weaponBtns[i].setVisible(false);
 				continue;
@@ -477,7 +478,8 @@ export class UIScene extends Phaser.Scene {
 	private showTurnBanner(playerIndex: number): void {
 		const colors = [COLORS.P1_COLOR, COLORS.P2_COLOR];
 		const colorHex = [COLORS.P1_LIGHT, COLORS.P2_LIGHT];
-		const label = `P${playerIndex + 1} 차례!`;
+		const emoji = playerIndex === 0 ? "\u2694\uFE0F" : "\uD83D\uDEE1\uFE0F";
+		const label = `${emoji} P${playerIndex + 1} 차례!`;
 
 		this.turnBannerText.setText(label);
 		this.turnBannerText.setColor(
@@ -485,8 +487,13 @@ export class UIScene extends Phaser.Scene {
 		);
 
 		this.turnBannerGfx.clear();
-		const bw = 320;
-		const bh = 52;
+		const bw = 380;
+		const bh = 60;
+
+		// Drop shadow (darker rect offset by 2px)
+		this.turnBannerGfx.fillStyle(0x000000, 0.35);
+		this.turnBannerGfx.fillRoundedRect(-bw / 2 + 2, -bh / 2 + 2, bw, bh, 12);
+
 		this.turnBannerGfx.fillStyle(colors[playerIndex], 0.3);
 		this.turnBannerGfx.fillRoundedRect(-bw / 2, -bh / 2, bw, bh, 12);
 		this.turnBannerGfx.fillStyle(COLORS.PANEL_BG, 0.6);
@@ -524,10 +531,10 @@ export class UIScene extends Phaser.Scene {
 		x: number,
 		hp: number,
 	): void {
-		const barW = 228;
-		const barH = 12;
+		const barW = 200;
+		const barH = 14;
 		const barY = 44;
-		const radius = 6;
+		const radius = 7;
 
 		gfx.clear();
 
@@ -535,7 +542,7 @@ export class UIScene extends Phaser.Scene {
 		gfx.fillStyle(0x1a1e2e, 1);
 		gfx.fillRoundedRect(x, barY, barW, barH, radius);
 
-		// Fill
+		// Fill with gradient effect (darker base + lighter top half)
 		const ratio = hp / CONFIG.TANK_HP;
 		const color =
 			ratio > 0.5
@@ -545,21 +552,29 @@ export class UIScene extends Phaser.Scene {
 					: COLORS.HP_LOW;
 		const fillW = barW * ratio;
 		if (fillW > 0) {
+			// Base color
 			gfx.fillStyle(color, 1);
 			gfx.fillRoundedRect(x, barY, Math.max(fillW, barH), barH, radius);
 
-			// 하이라이트
-			gfx.fillStyle(0xffffff, 0.15);
-			gfx.fillRoundedRect(x + 2, barY + 1, Math.max(fillW - 4, 4), barH / 3, 3);
+			// Lighter gradient overlay on top half
+			gfx.fillStyle(0xffffff, 0.25);
+			gfx.fillRoundedRect(x + 1, barY + 1, Math.max(fillW - 2, 4), barH / 2, { tl: radius, tr: radius, bl: 0, br: 0 });
+
+			// Subtle highlight line
+			gfx.fillStyle(0xffffff, 0.1);
+			gfx.fillRoundedRect(x + 2, barY + barH / 2, Math.max(fillW - 4, 4), barH / 2 - 1, { tl: 0, tr: 0, bl: radius, br: radius });
 		}
 	}
+
+	private fuelNumText?: Phaser.GameObjects.Text;
 
 	private drawFuelGauge(fuel: number, maxFuel?: number): void {
 		const barX = 180;
 		const barY = CONFIG.PLAY_HEIGHT + 28;
-		const barW = 64;
+		const barW = 80;
 		const barH = 10;
-		const ratio = fuel / (maxFuel ?? CONFIG.TANK_FUEL);
+		const maxF = maxFuel ?? CONFIG.TANK_FUEL;
+		const ratio = fuel / maxF;
 
 		this.fuelBarGfx.clear();
 
@@ -586,6 +601,16 @@ export class UIScene extends Phaser.Scene {
 
 		this.fuelBarGfx.lineStyle(1, COLORS.PANEL_BORDER, 0.5);
 		this.fuelBarGfx.strokeRoundedRect(barX, barY, barW, barH, 5);
+
+		// Numeric fuel text
+		if (!this.fuelNumText) {
+			this.fuelNumText = this.add.text(barX + barW + 6, barY - 1, "", {
+				fontSize: "10px",
+				color: "#ffffff",
+				fontStyle: "bold",
+			});
+		}
+		this.fuelNumText.setText(`${Math.round(fuel)}`);
 	}
 
 	private updateWindDisplay(wind: number): void {
@@ -606,7 +631,7 @@ export class UIScene extends Phaser.Scene {
 
 		const barX = cx + 20; // WIND 라벨 오른쪽
 		const barY = 28;
-		const barW = 140; // 전체 너비
+		const barW = 160; // 전체 너비
 		const barH = 12;
 		const halfW = barW / 2;
 		const barCx = barX + halfW; // 게이지 중앙
@@ -629,9 +654,9 @@ export class UIScene extends Phaser.Scene {
 			g.fillRoundedRect(fillX, barY + 1, fillW, (barH - 2) / 3, 2);
 		}
 
-		// 중앙 마커
-		g.fillStyle(0xffffff, 0.7);
-		g.fillRect(barCx - 1, barY, 2, barH);
+		// 중앙 마커 (more prominent: 3px wide, white)
+		g.fillStyle(0xffffff, 1);
+		g.fillRect(barCx - 1.5, barY - 1, 3, barH + 2);
 
 		// 외곽선
 		g.lineStyle(1, COLORS.PANEL_BORDER, 0.5);
@@ -643,14 +668,38 @@ export class UIScene extends Phaser.Scene {
 		g.fillTriangle(barX + 5, barY + barH / 2, barX + 10, barY + 2, barX + 10, barY + barH - 2);
 		// 오른쪽 삼각형
 		g.fillTriangle(barX + barW - 5, barY + barH / 2, barX + barW - 10, barY + 2, barX + barW - 10, barY + barH - 2);
+
+		// Pulsing arrow indicator on the wind direction side
+		if (Math.abs(wind) > 0.05) {
+			const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 300);
+			g.fillStyle(windColor, 0.6 + 0.4 * pulse);
+			if (wind > 0) {
+				// Arrow on right side
+				const ax = barX + barW + 4;
+				const ay = barY + barH / 2;
+				g.fillTriangle(ax + 8, ay, ax, ay - 5, ax, ay + 5);
+			} else {
+				// Arrow on left side
+				const ax = barX - 4;
+				const ay = barY + barH / 2;
+				g.fillTriangle(ax - 8, ay, ax, ay - 5, ax, ay + 5);
+			}
+		}
 	}
 
 	private drawTimerArc(timeLeft: number): void {
 		const cx = CONFIG.VIEW_WIDTH / 2 - 100;
 		const cy = 34;
-		const radius = 16;
+		const radius = 18;
 
 		this.timerArcGfx.clear();
+
+		// Pulsing glow effect when time < 5 seconds
+		if (timeLeft < 5 && timeLeft > 0) {
+			const pulse = 0.15 + 0.15 * Math.sin(this.time.now / 200);
+			this.timerArcGfx.fillStyle(COLORS.DANGER, pulse);
+			this.timerArcGfx.fillCircle(cx, cy, radius + 6);
+		}
 
 		this.timerArcGfx.fillStyle(0x0a0e17, 0.6);
 		this.timerArcGfx.fillCircle(cx, cy, radius + 2);
@@ -672,7 +721,8 @@ export class UIScene extends Phaser.Scene {
 		this.timerArcGfx.closePath();
 		this.timerArcGfx.fillPath();
 
-		this.timerArcGfx.fillStyle(0x0a0e17, 0.7);
+		// Darker inner circle
+		this.timerArcGfx.fillStyle(0x050810, 0.85);
 		this.timerArcGfx.fillCircle(cx, cy, radius - 6);
 
 		this.timerArcGfx.lineStyle(1, COLORS.PANEL_BORDER, 0.5);
@@ -809,8 +859,8 @@ export class UIScene extends Phaser.Scene {
 	}
 
 	private showMatchOverCard(data: GameOverData, cx: number, cy: number): void {
-		const cardW = 800;
-		const cardH = 460;
+		const cardW = 850;
+		const cardH = 480;
 		const cardX = cx - cardW / 2;
 		const cardY = cy - cardH / 2;
 
@@ -827,7 +877,23 @@ export class UIScene extends Phaser.Scene {
 				? Phaser.Display.Color.IntegerToColor(COLORS.P1_LIGHT).rgba
 				: Phaser.Display.Color.IntegerToColor(COLORS.P2_LIGHT).rgba;
 
-		const trophy = this.add.text(cx, cardY + 60, "🏆", {
+		// Pulsing glow behind trophy
+		const trophyGlow = this.add.graphics();
+		trophyGlow.fillStyle(COLORS.GOLD, 0.2);
+		trophyGlow.fillCircle(cx, cardY + 60, 40);
+		this.overlayContainer.add(trophyGlow);
+		this.tweens.add({
+			targets: trophyGlow,
+			scaleX: 1.3,
+			scaleY: 1.3,
+			alpha: 0.3,
+			duration: 1000,
+			yoyo: true,
+			repeat: -1,
+			ease: "Sine.easeInOut",
+		});
+
+		const trophy = this.add.text(cx, cardY + 60, "\uD83C\uDFC6", {
 			fontSize: "52px",
 		});
 		trophy.setOrigin(0.5);
@@ -943,6 +1009,7 @@ export class UIScene extends Phaser.Scene {
 		});
 
 		this.input.once("pointerdown", () => {
+			getBGM().stop();
 			this.scene.stop("GameScene");
 			this.scene.stop("UIScene");
 			this.scene.start("TitleScene");
@@ -969,10 +1036,26 @@ export class UIScene extends Phaser.Scene {
 				? Phaser.Display.Color.IntegerToColor(COLORS.P1_LIGHT).rgba
 				: Phaser.Display.Color.IntegerToColor(COLORS.P2_LIGHT).rgba;
 
+		// Pulsing glow behind win text
+		const roundGlow = this.add.graphics();
+		roundGlow.fillStyle(winColor, 0.15);
+		roundGlow.fillCircle(cx, cardY + 60, 36);
+		this.overlayContainer.add(roundGlow);
+		this.tweens.add({
+			targets: roundGlow,
+			scaleX: 1.3,
+			scaleY: 1.3,
+			alpha: 0.25,
+			duration: 900,
+			yoyo: true,
+			repeat: -1,
+			ease: "Sine.easeInOut",
+		});
+
 		const winText = this.add.text(
 			cx,
 			cardY + 60,
-			`P${data.winner + 1} 라운드 승리!`,
+			`\uD83C\uDFC6 P${data.winner + 1} 라운드 승리!`,
 			{
 				fontSize: "32px",
 				color: winnerColor,

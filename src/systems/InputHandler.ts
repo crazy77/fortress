@@ -44,6 +44,8 @@ export class InputHandler {
 	activeTank: Tank | null = null;
 	maxPower: number = CONFIG.MAX_POWER;
 	currentWind = 0;
+	/** angleLock 디버프 — true이면 각도 변경 불가 */
+	angleLocked = false;
 	/** 맵 중력/바람 배율 (궤적 미리보기용) */
 	mapGravity = 1.0;
 	mapWindMul = 1.0;
@@ -249,9 +251,11 @@ export class InputHandler {
 			angleMax,
 		);
 
-		this.currentAim = { angle: clampedAngle, power };
+		// angleLock 디버프 적용: 각도 변경 불가 (기존 각도 유지)
+		const finalAngle = this.angleLocked ? (this.activeTank.angle) : clampedAngle;
+		this.currentAim = { angle: finalAngle, power };
 
-		this.activeTank.setAngle(clampedAngle);
+		this.activeTank.setAngle(finalAngle);
 
 		const muzzle = this.activeTank.getMuzzlePosition();
 		const worldAngle = this.activeTank.getWorldAngle();
