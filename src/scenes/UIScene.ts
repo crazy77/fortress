@@ -931,10 +931,10 @@ export class UIScene extends Phaser.Scene {
 		divider.strokePath();
 		this.overlayContainer.add(divider);
 
-		// Stats
+		// Stats with enhanced display
 		if (data.stats && data.accuracy) {
-			const colLeft = cx - 180;
-			const colRight = cx + 180;
+			const colLeft = cx - 200;
+			const colRight = cx + 200;
 			const statsY = cardY + 235;
 
 			const h1 = this.add.text(colLeft, statsY, "P1", {
@@ -953,43 +953,83 @@ export class UIScene extends Phaser.Scene {
 			h2.setOrigin(0.5);
 			this.overlayContainer.add(h2);
 
-			const labels = ["명중률", "총 데미지", "최대 피해"];
+			const labels = ["명중률", "총 데미지", "최대 피해", "발사 횟수", "턴 수"];
 			const vals = [
 				[`${data.accuracy[0]}%`, `${data.accuracy[1]}%`],
-				[
-					`${data.stats[0].totalDamageDealt}`,
-					`${data.stats[1].totalDamageDealt}`,
-				],
+				[`${data.stats[0].totalDamageDealt}`, `${data.stats[1].totalDamageDealt}`],
 				[`${data.stats[0].maxSingleHit}`, `${data.stats[1].maxSingleHit}`],
+				[`${data.stats[0].shotsFired}`, `${data.stats[1].shotsFired}`],
+				[`${data.stats[0].turnsPlayed}`, `${data.stats[1].turnsPlayed}`],
 			];
 
 			for (let r = 0; r < labels.length; r++) {
-				const rowY = statsY + 35 + r * 32;
+				const rowY = statsY + 35 + r * 28;
 
 				const lbl = this.add.text(cx, rowY, labels[r], {
-					fontSize: "14px",
-					color: Phaser.Display.Color.IntegerToColor(COLORS.TEXT_SECONDARY)
-						.rgba,
+					fontSize: "13px",
+					color: Phaser.Display.Color.IntegerToColor(COLORS.TEXT_SECONDARY).rgba,
 				});
 				lbl.setOrigin(0.5);
 				this.overlayContainer.add(lbl);
 
+				// Highlight winner's stat in each row
+				const v1Num = parseFloat(vals[r][0]);
+				const v2Num = parseFloat(vals[r][1]);
+				const v1Better = v1Num > v2Num;
+				const v2Better = v2Num > v1Num;
+
 				const v1 = this.add.text(colLeft, rowY, vals[r][0], {
-					fontSize: "16px",
-					color: "#ffffff",
+					fontSize: "15px",
+					color: v1Better ? Phaser.Display.Color.IntegerToColor(COLORS.GOLD).rgba : "#ffffff",
 					fontStyle: "bold",
 				});
 				v1.setOrigin(0.5);
 				this.overlayContainer.add(v1);
 
 				const v2 = this.add.text(colRight, rowY, vals[r][1], {
-					fontSize: "16px",
-					color: "#ffffff",
+					fontSize: "15px",
+					color: v2Better ? Phaser.Display.Color.IntegerToColor(COLORS.GOLD).rgba : "#ffffff",
 					fontStyle: "bold",
 				});
 				v2.setOrigin(0.5);
 				this.overlayContainer.add(v2);
 			}
+
+			// MVP Award section
+			const mvpY = statsY + 35 + labels.length * 28 + 15;
+			const divider2 = this.add.graphics();
+			divider2.lineStyle(1, COLORS.PANEL_BORDER, 0.4);
+			divider2.beginPath();
+			divider2.moveTo(cardX + 80, mvpY);
+			divider2.lineTo(cardX + cardW - 80, mvpY);
+			divider2.strokePath();
+			this.overlayContainer.add(divider2);
+
+			// Determine MVP based on accuracy + damage
+			const p1Score = data.accuracy[0] + data.stats[0].totalDamageDealt * 0.5;
+			const p2Score = data.accuracy[1] + data.stats[1].totalDamageDealt * 0.5;
+			const mvp = p1Score >= p2Score ? 0 : 1;
+			const mvpColor = mvp === 0
+				? Phaser.Display.Color.IntegerToColor(COLORS.P1_LIGHT).rgba
+				: Phaser.Display.Color.IntegerToColor(COLORS.P2_LIGHT).rgba;
+
+			const mvpText = this.add.text(cx, mvpY + 18, `⭐ MVP: P${mvp + 1}`, {
+				fontSize: "16px",
+				color: mvpColor,
+				fontStyle: "bold",
+			});
+			mvpText.setOrigin(0.5);
+			this.overlayContainer.add(mvpText);
+
+			this.tweens.add({
+				targets: mvpText,
+				scaleX: 1.05,
+				scaleY: 1.05,
+				duration: 800,
+				yoyo: true,
+				repeat: -1,
+				ease: "Sine.easeInOut",
+			});
 		}
 
 		const tapText = this.add.text(cx, cardY + cardH - 45, "탭하여 타이틀로", {

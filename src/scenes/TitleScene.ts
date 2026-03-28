@@ -196,7 +196,13 @@ export class TitleScene extends Phaser.Scene {
 		this.tweens.add({ targets: startBtn, alpha: 0.85, duration: 1000, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
 
 		y += 54;
-		this.add.text(cx, y, "드래그: 조준 | A/D: 이동 | S: 스킵", { fontSize: "12px", color: "#556677" }).setOrigin(0.5);
+		this.add.text(cx, y, "드래그: 조준 | A/D: 이동 | SPACE: 차지 | ENTER: 발사 | ESC: 일시정지", { fontSize: "11px", color: "#556677" }).setOrigin(0.5);
+
+		// ENTER 키로 빠른 시작
+		if (this.input.keyboard) {
+			const enterKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+			enterKey.once("down", () => this.startGame());
+		}
 
 		// 업적 버튼
 		const achMgr = getAchievementManager();
@@ -492,7 +498,7 @@ export class TitleScene extends Phaser.Scene {
 	// ═══ 설정 모달 ═══
 
 	private openSettingsModal(): void {
-		this.openModal((modal, cx, _cardX, cardY, _cardW, cardH) => {
+		this.openModal((modal, cx, _cardX, cardY, _cardW, _cardH) => {
 			modal.add(this.add.text(cx, cardY + 30, "⚙️ 게임 설정", { fontSize: "20px", color: "#ffffff", fontStyle: "bold" }).setOrigin(0.5));
 
 			let my = cardY + 75;
@@ -626,7 +632,7 @@ export class TitleScene extends Phaser.Scene {
 	// ═══ 업적 모달 ═══
 
 	private openAchievementModal(): void {
-		this.openModal((modal, cx, cardX, cardY, cardW, cardH) => {
+		this.openModal((modal, cx, _cardX, cardY, cardW, _cardH) => {
 			modal.add(this.add.text(cx, cardY + 30, "🏆 업적", { fontSize: "20px", color: "#ffffff", fontStyle: "bold" }).setOrigin(0.5));
 
 			const achMgr = getAchievementManager();

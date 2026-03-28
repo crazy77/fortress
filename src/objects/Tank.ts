@@ -160,12 +160,14 @@ export class Tank {
 
 	// ─── 전투 ───
 
-	takeDamage(amount: number): void {
+	takeDamage(amount: number, suppressPopup = false): void {
 		if (amount <= 0) return;
 		this.health = Math.max(0, this.health - amount);
 		this.stopIdleAnimation();
 		this.flashWhite();
-		this.showDamagePopup(amount);
+		if (!suppressPopup) {
+			this.showDamagePopup(amount);
+		}
 		this.playHitAnimation(amount);
 		if (this.isDead() && !this.destroyed) {
 			this.playDestroyAnimation();

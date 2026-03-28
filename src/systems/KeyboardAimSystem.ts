@@ -51,6 +51,11 @@ export class KeyboardAimSystem {
 	private isCharging = false;
 	private chargeDirection = 1; // 1 = up, -1 = down (ping-pong)
 
+	// Wind/gravity for trajectory preview
+	currentWind = 0;
+	mapGravity = 1.0;
+	mapWindMul = 1.0;
+
 	// Numeric input buffer
 	private angleBuffer = "";
 	private inputMode: "none" | "angle" | "power" = "none";
@@ -64,6 +69,8 @@ export class KeyboardAimSystem {
 	private powerValue: Phaser.GameObjects.Text;
 	private chargeBarGfx: Phaser.GameObjects.Graphics;
 	private inputHint: Phaser.GameObjects.Text;
+	/** Trajectory preview line (world-space, scrolls with camera) */
+	private trajectoryGfx: Phaser.GameObjects.Graphics;
 
 	// Keyboard objects
 	private keys!: {
@@ -166,6 +173,11 @@ export class KeyboardAimSystem {
 		this.inputHint.setDepth(51);
 		this.inputHint.setScrollFactor(0);
 		this.inputHint.setVisible(false);
+
+		// Trajectory preview (world-space)
+		this.trajectoryGfx = scene.add.graphics();
+		this.trajectoryGfx.setDepth(10);
+		this.trajectoryGfx.setVisible(false);
 
 		// --- Keyboard bindings ---
 		if (!scene.input.keyboard) return; // 터치 전용 디바이스 안전 가드
@@ -281,6 +293,7 @@ export class KeyboardAimSystem {
 		this.powerValue.destroy();
 		this.chargeBarGfx.destroy();
 		this.inputHint.destroy();
+		this.trajectoryGfx.destroy();
 	}
 
 	// ─── Keyboard handling ────────────────────────────────────
@@ -465,6 +478,8 @@ export class KeyboardAimSystem {
 		this.chargeBarGfx.setVisible(false);
 		this.chargeBarGfx.clear();
 		this.inputHint.setVisible(false);
+		this.trajectoryGfx.setVisible(false);
+		this.trajectoryGfx.clear();
 	}
 
 	private drawHUD(): void {
@@ -559,6 +574,74 @@ export class KeyboardAimSystem {
 		// --- Hint text ---
 		this.inputHint.setPosition(panelX + PANEL_WIDTH / 2, panelY + PANEL_HEIGHT - 4);
 		this.inputHint.setVisible(true);
+
+		// --- Trajectory preview ---
+		this.drawTrajectory();
+	}
+
+	private drawTrajectory(): void {
+		this.trajectoryGfx.clear();
+		this.trajectoryGfx.setVisible(true);
+
+		if (!this.activeTank) return;
+
+		const muzzle = this.activeTank.getMuzzlePosition();
+		const worldAngle = this.activeTank.getWorldAngle();
+		const rad = Phaser.Math.DegToRad(worldAngle);
+
+		let vx = Math.cos(rad) * this.power;
+		let vy = -Math.sin(rad) * this.power;
+		let px = muzzle.x;
+		let py = muzzle.y;
+
+		// Draw aim line from muzzle
+		const aimLen = 50;
+		const endX = muzzle.x + Math.cos(rad) * aimLen;
+		const endY = muzzle.y - Math.sin(rad) * aimLen;
+		const segments = 6;
+		for (let i = 0; i < segments; i++) {
+			if (i % 2 === 0) {
+				const t0 = i / segments;
+				const t1 = (i + 1) / segments;
+				this.trajectoryGfx.lineStyle(2, 0xffffff, 0.7);
+				this.trajectoryGfx.beginPath();
+				this.trajectoryGfx.moveTo(
+					muzzle.x + (endX - muzzle.x) * t0,
+					muzzle.y + (endY - muzzle.y) * t0,
+				);
+				this.trajectoryGfx.lineTo(
+					muzzle.x + (endX - muzzle.x) * t1,
+					muzzle.y + (endY - muzzle.y) * t1,
+				);
+				this.trajectoryGfx.strokePath();
+			}
+		}
+
+		const windRes = this.activeTank ? 0 : 0; // Accessed via tank typeDef if available
+		const totalSteps = 60;
+
+		for (let i = 1; i <= totalSteps; i++) {
+			vx += this.currentWind * 0.01 * (1 - windRes) * this.mapWindMul;
+			vy += CONFIG.GRAVITY * this.mapGravity;
+			px += vx;
+			py += vy;
+
+			if (px < -50 || px > CONFIG.WORLD_WIDTH + 50 || py > CONFIG.PLAY_HEIGHT + 50) break;
+
+			const t = i / totalSteps;
+
+			if (i % 3 === 0) {
+				const alpha = 0.5 * (1 - t * 0.8);
+				const size = 3 - t * 1.5;
+				const colorT = Math.min(t * 2, 1);
+				const r = 0xff;
+				const g = Math.round(0xff - colorT * 0x66);
+				const b = Math.round(0xff - colorT * 0xcc);
+				const color = (r << 16) | (g << 8) | b;
+				this.trajectoryGfx.fillStyle(color, alpha);
+				this.trajectoryGfx.fillCircle(px, py, Math.max(size, 1.2));
+			}
+		}
 	}
 
 	private updateAngleDisplay(text: string): void {

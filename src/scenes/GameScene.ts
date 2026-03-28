@@ -27,6 +27,13 @@ import { WeatherSystem, getWeatherForMap } from "../systems/WeatherSystem";
 import { WindSystem } from "../systems/WindSystem";
 import { KeyboardAimSystem } from "../systems/KeyboardAimSystem";
 import { getPlayerRank } from "../systems/PlayerRank";
+import { PauseSystem } from "../systems/PauseSystem";
+import { TutorialSystem } from "../systems/TutorialSystem";
+import {
+	rollCriticalHit, CRIT_MULTIPLIER,
+	showDamageNumber, showHitMarker, showCriticalBanner,
+	showComboAnnouncement, WindParticles,
+} from "../systems/CombatFeedback";
 
 export class GameScene extends Phaser.Scene {
 	private terrain!: Terrain;
@@ -105,6 +112,11 @@ export class GameScene extends Phaser.Scene {
 	private selfDamageDealt = false;
 	private resolvedMapId = "";
 	private keyboardAim: KeyboardAimSystem | null = null;
+
+	// 새 시스템 (2차)
+	private pauseSystem: PauseSystem | null = null;
+	private tutorial: TutorialSystem | null = null;
+	private windParticles: WindParticles | null = null;
 
 	// ── 게임성 메카닉 ──
 	/** 연속 명중 카운트 (플레이어별) */
@@ -228,6 +240,9 @@ export class GameScene extends Phaser.Scene {
 		// 키보드 조준 시스템
 		this.keyboardAim = new KeyboardAimSystem(this);
 		this.keyboardAim.setActiveTank(this.tanks[first]);
+		this.keyboardAim.currentWind = this.windSystem.currentWind;
+		this.keyboardAim.mapGravity = this.mapGravity;
+		this.keyboardAim.mapWindMul = this.mapWindMul;
 		this.keyboardAim.onFire = (aim) => this.fire(aim.angle, aim.power);
 
 		// 폭발 파티클 — 프리미엄 이펙트
@@ -271,6 +286,30 @@ export class GameScene extends Phaser.Scene {
 		getBGM().setMuted(this.audio.isMuted());
 		getBGM().start("gameplay");
 
+		// 일시정지 시스템
+		this.pauseSystem = new PauseSystem(this, {
+			onResume: () => {
+				getBGM().setMuted(this.audio.isMuted());
+			},
+			onRestart: () => {
+				this.itemManager.destroyAll();
+				this.scene.restart({
+					aiEnabled: this.aiEnabled,
+					aiDifficulty: this.aiDifficulty,
+					p1TankId: this.tankTypes[0].id,
+					p2TankId: this.tankTypes[1].id,
+					mapId: this.selectedMapId,
+				});
+			},
+			onQuit: () => {
+				this.scene.stop("UIScene");
+				this.scene.start("TitleScene");
+			},
+		});
+
+		// 바람 입자 시각화
+		this.windParticles = new WindParticles(this);
+
 		// UI 씬
 		this.scene.stop("UIScene");
 		this.scene.launch("UIScene");
@@ -296,6 +335,9 @@ export class GameScene extends Phaser.Scene {
 			if (this.waterEffect) this.waterEffect.destroy();
 			if (this.confettiEffect) this.confettiEffect.destroy();
 			if (this.keyboardAim) this.keyboardAim.destroy();
+			if (this.pauseSystem) this.pauseSystem.destroy();
+			if (this.tutorial) this.tutorial.destroy();
+			if (this.windParticles) this.windParticles.destroy();
 			for (const tank of this.tanks) tank.cleanup();
 			this.terrain.destroy(); // 텍스처 메모리 누수 방지
 			getBGM().stop();
@@ -303,7 +345,16 @@ export class GameScene extends Phaser.Scene {
 
 		// INTRO 상태로 시작 (AI/입력 모두 차단)
 		this.turnManager.setState(TurnState.INTRO);
-		this.playIntroCamera();
+
+		// 첫 플레이: 튜토리얼 표시
+		if (TutorialSystem.shouldShow()) {
+			this.tutorial = new TutorialSystem(this, () => {
+				this.playIntroCamera();
+			});
+			this.tutorial.show();
+		} else {
+			this.playIntroCamera();
+		}
 	}
 
 	private playIntroCamera(): void {
@@ -668,6 +719,9 @@ export class GameScene extends Phaser.Scene {
 	}
 
 	update(_time: number, delta: number): void {
+		// 일시정지 중이면 업데이트 스킵
+		if (this.pauseSystem?.paused) return;
+
 		// 구름 이동
 		const windDir = this.windSystem.currentWind;
 		for (const cloud of this.clouds) {
@@ -686,6 +740,9 @@ export class GameScene extends Phaser.Scene {
 		}
 		if (this.waterEffect) this.waterEffect.update(delta);
 		if (this.confettiEffect) this.confettiEffect.update(delta);
+
+		// 바람 입자 업데이트
+		if (this.windParticles) this.windParticles.update(delta, this.windSystem.currentWind);
 
 		// 미니맵 갱신
 		this.updateMinimap();
@@ -710,7 +767,10 @@ export class GameScene extends Phaser.Scene {
 				} else {
 					this.inputHandler.setEnabled(true);
 					this.setMoveButtonsVisible(true);
-					if (this.keyboardAim) this.keyboardAim.setEnabled(true);
+					if (this.keyboardAim) {
+						this.keyboardAim.setEnabled(true);
+						this.keyboardAim.update(delta);
+					}
 					const cp = this.turnManager.currentPlayer;
 				if (this.movingDirection !== 0 && this.debuffs[cp].moveLock <= 0) {
 						const tank = this.tanks[cp];
@@ -1161,7 +1221,6 @@ export class GameScene extends Phaser.Scene {
 					while (pushY > 0 && this.terrain.isSolid(tank.x, pushY)) {
 						pushY--;
 					}
-					tank.x = tank.x; // keep x
 					tank.y = pushY;
 					tank.settleOnTerrain();
 				}
@@ -1209,6 +1268,9 @@ export class GameScene extends Phaser.Scene {
 		// 기존 파워업 낙하 체크 (지형 파괴로 발판 사라짐)
 		this.itemManager.checkFallingAfterExplosion(this.terrain);
 
+		// 크리티컬 히트 판정
+		const isCritical = rollCriticalHit();
+
 		let totalDamage = 0;
 		let hitOpponent = false;
 		for (const tank of this.tanks) {
@@ -1230,6 +1292,11 @@ export class GameScene extends Phaser.Scene {
 					defenderType.era,
 				);
 				dmg = Math.round(dmg * eraMultiplier);
+			}
+
+			// 크리티컬 히트 (상대에게만 적용, 1.5배)
+			if (dmg > 0 && tank.playerIndex !== currentPlayer && isCritical) {
+				dmg = Math.round(dmg * CRIT_MULTIPLIER);
 			}
 
 			// 고도 보너스 + 시각 피드백
@@ -1279,7 +1346,15 @@ export class GameScene extends Phaser.Scene {
 			}
 
 			if (dmg > 0) {
-				tank.takeDamage(dmg);
+				// 향상된 데미지 피드백 (CombatFeedback에서 팝업 처리)
+				const isSelf = tank.playerIndex === currentPlayer;
+				showDamageNumber(this, tank.x, tank.y, dmg, {
+					isCritical: isCritical && !isSelf,
+					isSelfDamage: isSelf,
+				});
+				showHitMarker(this, x, y, isCritical && !isSelf);
+
+				tank.takeDamage(dmg, true);
 				this.audio.playHit(this.tankTypes[tank.playerIndex].style);
 				totalDamage += dmg;
 
@@ -1296,18 +1371,17 @@ export class GameScene extends Phaser.Scene {
 			}
 		}
 
-		// 콤보 시스템
+		// 크리티컬 히트 배너
+		if (isCritical && hitOpponent) {
+			showCriticalBanner(this);
+			vibrate([100, 50, 100, 50, 100]);
+		}
+
+		// 콤보 시스템 — 향상된 피드백
 		if (hitOpponent) {
 			this.comboCount[currentPlayer]++;
 			const combo = this.comboCount[currentPlayer];
-			if (combo >= 2) {
-				const comboTxt = this.add.text(
-					this.tanks[currentPlayer].x, this.tanks[currentPlayer].y - 55,
-					combo >= 3 ? `🔥 ${combo}연속 명중!` : `✨ ${combo}연속!`,
-					{ fontSize: combo >= 3 ? "18px" : "15px", color: combo >= 3 ? "#ff6600" : "#f1c40f", stroke: "#000000", strokeThickness: 3, fontStyle: "bold" },
-				).setOrigin(0.5).setDepth(20);
-				this.tweens.add({ targets: comboTxt, y: comboTxt.y - 30, alpha: 0, duration: 1200, onComplete: () => comboTxt.destroy() });
-			}
+			showComboAnnouncement(this, this.tanks[currentPlayer].x, this.tanks[currentPlayer].y, combo);
 		} else {
 			this.comboCount[currentPlayer] = 0;
 		}
@@ -1320,11 +1394,19 @@ export class GameScene extends Phaser.Scene {
 			getBGM().start("intense");
 		}
 
+		// 크리티컬 히트는 더 강한 스크린 셰이크
+		const critShakeMul = (isCritical && hitOpponent) ? 2.0 : 1.0;
 		const shakeIntensity =
 			(0.005 + (totalDamage / CONFIG.TANK_HP) * 0.02) *
-			CONFIG.SCREEN_SHAKE_MULTIPLIER;
-		this.cameras.main.shake(200 + totalDamage * 2, shakeIntensity);
+			CONFIG.SCREEN_SHAKE_MULTIPLIER * critShakeMul;
+		const shakeDuration = (isCritical && hitOpponent) ? 400 + totalDamage * 3 : 200 + totalDamage * 2;
+		this.cameras.main.shake(shakeDuration, shakeIntensity);
 		vibrate(totalDamage > 0 ? [50, 30, 80] : 20);
+
+		// 크리티컬 히트: 화면 플래시
+		if (isCritical && hitOpponent) {
+			screenFlash(this, 0xff3300, 150, 0.25);
+		}
 
 		proj.destroy();
 		this.pendingImpacts--;
@@ -1646,6 +1728,7 @@ export class GameScene extends Phaser.Scene {
 		// 키보드 조준 업데이트
 		if (this.keyboardAim) {
 			this.keyboardAim.setActiveTank(tank);
+			this.keyboardAim.currentWind = this.windSystem.currentWind;
 		}
 
 		// 턴 마커 전환

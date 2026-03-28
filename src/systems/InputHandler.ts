@@ -302,21 +302,64 @@ export class InputHandler {
 		const wind = this.currentWind;
 		const windRes = this.activeTank?.typeDef.windResistance ?? 0;
 
-		const steps = 22;
-		const dotCount = 8;
-		const interval = Math.floor(steps / dotCount);
+		// Extended trajectory with fading dotted line
+		const totalSteps = 60;
+		const dotInterval = 3;
+		let prevX = px;
+		let prevY = py;
 
-		for (let i = 1; i <= steps; i++) {
+		for (let i = 1; i <= totalSteps; i++) {
 			vx += wind * 0.01 * (1 - windRes) * this.mapWindMul;
 			vy += CONFIG.GRAVITY * this.mapGravity;
 			px += vx;
 			py += vy;
 
-			if (i % interval === 0) {
-				const alpha = 0.6 - (i / steps) * 0.4;
-				this.aimLine.fillStyle(0xffffff, alpha);
-				this.aimLine.fillCircle(px, py, 3);
+			// Stop if out of world bounds
+			if (px < -50 || px > CONFIG.WORLD_WIDTH + 50 || py > CONFIG.PLAY_HEIGHT + 50) break;
+
+			const t = i / totalSteps;
+
+			// Draw connecting line segments (fading)
+			if (i % dotInterval === 0) {
+				const alpha = 0.5 * (1 - t * 0.8);
+				const size = 3 - t * 1.5;
+
+				// Gradient color: white → yellow → orange as it travels
+				const colorT = Math.min(t * 2, 1);
+				const r = Math.round(0xff);
+				const g = Math.round(0xff - colorT * 0x66);
+				const b = Math.round(0xff - colorT * 0xcc);
+				const color = (r << 16) | (g << 8) | b;
+
+				this.aimLine.fillStyle(color, alpha);
+				this.aimLine.fillCircle(px, py, Math.max(size, 1.2));
 			}
+
+			// Draw faint connecting lines for first portion
+			if (i <= 20 && i > 1) {
+				const lineAlpha = 0.12 * (1 - t);
+				this.aimLine.lineStyle(1, 0xffffff, lineAlpha);
+				this.aimLine.beginPath();
+				this.aimLine.moveTo(prevX, prevY);
+				this.aimLine.lineTo(px, py);
+				this.aimLine.strokePath();
+			}
+
+			prevX = px;
+			prevY = py;
+		}
+
+		// Landing crosshair at estimated impact point
+		if (py < CONFIG.PLAY_HEIGHT + 50) {
+			this.aimLine.lineStyle(1.5, 0xff6600, 0.35);
+			const crossSize = 8;
+			this.aimLine.beginPath();
+			this.aimLine.moveTo(px - crossSize, py);
+			this.aimLine.lineTo(px + crossSize, py);
+			this.aimLine.moveTo(px, py - crossSize);
+			this.aimLine.lineTo(px, py + crossSize);
+			this.aimLine.strokePath();
+			this.aimLine.strokeCircle(px, py, crossSize + 2);
 		}
 	}
 
