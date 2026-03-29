@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Logs & debug
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# TypeScript
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+
+# Vite (root-level cache if used)
+.vite/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor / tooling (local)
+.idea/
+*.swp
+*.swo
+*~
+
+# Serena: index cache only (regenerated); project.yml / memories / project.local.yml can be committed
+.serena/cache/
